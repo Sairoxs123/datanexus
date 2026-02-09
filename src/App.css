@@ -78,12 +78,19 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   border-color: #396cd8;
+  background-color: #f0f4ff;
 }
-button:active {
+
+button:active:not(:disabled) {
   border-color: #396cd8;
   background-color: #e8e8e8;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 input,
@@ -93,6 +100,130 @@ button {
 
 #greet-input {
   margin-right: 5px;
+}
+
+/* Data Ingestion Form Styles */
+.ingest-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 2rem;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #0f0f0f;
+  font-size: 0.95em;
+}
+
+.form-group input {
+  padding: 0.8em 1em;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 1em;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  border-color: #396cd8;
+  background-color: #f9fbff;
+}
+
+.file-input-wrapper {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.file-button {
+  padding: 0.8em 1.5em;
+  background-color: #396cd8;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.file-button:hover:not(:disabled) {
+  background-color: #2d52b8;
+  box-shadow: 0 4px 8px rgba(57, 108, 216, 0.3);
+}
+
+.file-button:disabled {
+  background-color: #a0b0d8;
+}
+
+.file-path {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.8em 1em;
+  background-color: #f0f4ff;
+  border: 1px solid #d0deff;
+  border-radius: 6px;
+  color: #0f0f0f;
+  word-break: break-all;
+  font-size: 0.9em;
+}
+
+.file-hint {
+  margin: 0;
+  font-size: 0.85em;
+  color: #666666;
+}
+
+.message {
+  padding: 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.message-success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.message-error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.submit-button {
+  padding: 0.9em 1.5em;
+  background-color: #28a745;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 1.05em;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.submit-button:hover:not(:disabled) {
+  background-color: #218838;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+}
+
+.submit-button:disabled {
+  background-color: #a8d0b5;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -107,10 +238,74 @@ button {
 
   input,
   button {
-    color: #ffffff;
+    color: #f6f6f6;
     background-color: #0f0f0f98;
   }
-  button:active {
+
+  button:hover:not(:disabled) {
+    background-color: #1a1a1a;
+  }
+
+  button:active:not(:disabled) {
     background-color: #0f0f0f69;
   }
+
+  .ingest-form {
+    background-color: #1e1e1e;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  }
+
+  .form-group label {
+    color: #f6f6f6;
+  }
+
+  .form-group input {
+    background-color: #2a2a2a;
+    border-color: #444444;
+    color: #f6f6f6;
+  }
+
+  .form-group input:focus {
+    border-color: #5b96ff;
+    background-color: #0f2a4d;
+  }
+
+  .file-button {
+    background-color: #5b96ff;
+  }
+
+  .file-button:hover:not(:disabled) {
+    background-color: #3569d4;
+  }
+
+  .file-path {
+    background-color: #2a3a5a;
+    border-color: #3d5a99;
+    color: #d0deff;
+  }
+
+  .file-hint {
+    color: #999999;
+  }
+
+  .message-success {
+    background-color: #1b4529;
+    color: #a6e9b8;
+    border-color: #2d6a3e;
+  }
+
+  .message-error {
+    background-color: #4a1f24;
+    color: #f5a6a6;
+    border-color: #6b3a3f;
+  }
+
+  .submit-button {
+    background-color: #28a745;
+  }
+
+  .submit-button:hover:not(:disabled) {
+    background-color: #1e7e34;
+  }
 }
+
