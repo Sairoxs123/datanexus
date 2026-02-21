@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"tauri dev\" \"cd backend && python -m uvicorn main:app --reload\"",
+    "dev": "tauri dev",
+    "dev:all": "concurrently --kill-others-on-fail \"tauri dev\" \"cd backend && python -m uvicorn main:app --reload\"",
     "dev:frontend": "vite",
     "dev:backend": "cd backend && python -m uvicorn main:app --reload",
     "build": "tsc && vite build",

@@ -8,6 +8,7 @@ from sqlmodel import SQLModel, Field, Session, create_engine, select
 from datetime import datetime
 from contextlib import asynccontextmanager
 import admin
+from functools import wraps
 
 sqlite_url = "sqlite:///database.db"
 connect_args = {"check_same_thread" : False}
@@ -33,6 +34,15 @@ SessionDep = Annotated[Session, Depends(get_session)]
 # conn = duckdb.connect(database="my-db.duckdb", read_only=False)
 conn = None
 
+def require_project(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        global conn
+        if not conn:
+            return JSONResponse({"error" : "Project not selected."}, status_code=401)
+        return func(*args, **kwargs)
+    return wrapper
+
 @asynccontextmanager
 async def lifespan(app : FastAPI):
     SQLModel.metadata.create_all(engine)
@@ -55,8 +65,12 @@ app.add_middleware(
 )
 
 @app.get("/")
-def index():
-    return {"message": "Hello, World!"}
+def index(session: SessionDep):
+    projects = session.exec(select(Project)).all()
+    projects_json = []
+    for i in projects:
+        projects_json.append(i.json())
+    return JSONResponse({"projects" : projects_json if projects_json else None})
 
 @app.post("/create-new-project")
 def create_new_project(request: CreateProjectRequest, session: SessionDep):
@@ -86,12 +100,10 @@ def create_new_project(request: CreateProjectRequest, session: SessionDep):
     return JSONResponse({"message": "Project created."}, status_code=201)
 
 @app.post("/ingest-data")
+@require_project
 def ingest_data(request: DataIngestionRequest):
 
     global conn
-    if not conn:
-        return JSONResponse({"error" : "Project not selected."}, status_code=401)
-
     file_path = request.file_path
     print(file_path)
     file_chunks = file_path.split("\\")
@@ -116,3 +128,32 @@ def ingest_data(request: DataIngestionRequest):
         return {"message": f"Data ingested successfully into table '{table_name}'."}
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/select-current-project/{project_id}")
+def select_current_project(project_id: int, session: SessionDep):
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        return JSONResponse({"error" : "Invalid project ID"}, status_code=404)
+
+    folder_path = project.name.replace(" ", "_")
+    global conn
+    conn = duckdb.connect(f"{folder_path}/project.duckdb", read_only=False)
+
+    return JSONResponse({"message" : "Project selected successfully"})
+
+@app.get("/project/dashboard")
+@require_project
+def get_project_dashboard():
+    global conn
+    tables = conn.execute("SHOW TABLES;").fetchall()
+    return JSONResponse({"tables" : tables})
+
+@app.post("/execute-sql")
+@require_project
+def execute_sql(query_str: str, session: SessionDep):
+    global conn
+    data = conn.execute(query_str).fetchall()
+    columns = [desc[0] for desc in conn.description]
+    results = [dict(zip(columns, row)) for row in data]
+
+    return JSONResponse({"results" : results})
