@@ -70,7 +70,7 @@ export default function SQLEditor() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-bg-secondary">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-bg-secondary">
       {/* Editor area */}
       <div className="px-6 py-4 border-b border-border shrink-0 bg-bg-secondary">
         <div className="flex items-center justify-between mb-3">
@@ -155,7 +155,6 @@ export default function SQLEditor() {
           rows={results}
           rowNumberOffset={0}
           emptyText="No rows returned"
-          maxBodyHeight={520}
         />
       ) : results && results.length === 0 ? (
         <div className="flex-1 flex items-center justify-center bg-bg-secondary">

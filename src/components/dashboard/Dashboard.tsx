@@ -56,7 +56,7 @@ export default function Dashboard({
   const handleSelectTable = (table: string) => { setSelectedTable(table); setActiveTab("data"); };
 
   return (
-    <div className="h-screen flex bg-bg-secondary">
+    <div className="h-screen flex overflow-hidden bg-bg-secondary">
       <Sidebar
         projectName={projectName}
         tables={tables}
@@ -69,7 +69,7 @@ export default function Dashboard({
         onBackToProjects={onBackToProjects}
         loading={refreshing}
       />
-      <main className="flex-1 flex flex-col min-h-0 min-w-0">
+      <main className="flex-1 flex flex-col h-full overflow-hidden">
         {activeTab === "data" ? (
           <TableViewer tableName={selectedTable} />
         ) : (
