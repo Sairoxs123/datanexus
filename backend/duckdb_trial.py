@@ -12,7 +12,9 @@ print(result)
 result = conn.execute("SHOW TABLES;").df()
 print(result)'''
 
+# conn.execute("CREATE TABLE BLAHBLAH (name varchar)")
+
 # Option 3: Fetch one row at a time
-result = conn.execute("SELECT * FROM yellow_tripdata_2025_01").fetchall()
+result = conn.execute("SELECT COUNT(*) FROM yellow_tripdata_2025_01").fetchall()
 for row in result:
     print(row)
