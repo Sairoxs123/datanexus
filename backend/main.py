@@ -147,19 +147,14 @@ def select_current_project(project_id: int, session: SessionDep):
 def get_project_dashboard():
     global conn
     tables = conn.execute("SHOW TABLES;").fetchall()
-    schemas = []
-    for i in tables:
-        table = i[0]
-        schema = conn.execute(f"DESC {table};").fetchall()
-        schemas.append(schema)
-    return JSONResponse({"tables" : tables, "schemas" : schemas})
+    return JSONResponse({"tables" : tables})
 
 @app.get("/sql/get-selected-table-data")
 @require_project
-def gettabledata(table_name : str, offset : int = 0):
+def gettabledata(table_name : str, offset : int = 0, limit : int = 100):
     global conn
-    # Get rows as list of tuples
-    rows = conn.execute(f"SELECT * FROM {table_name} LIMIT 100 OFFSET {offset};").fetchall()
+    df = conn.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset};").df()
+    rows = json.loads(df.to_json(orient='records'))
 
     if offset == 0:
         row_count = conn.execute(f"SELECT COUNT(*) from {table_name};").fetchall()
@@ -179,8 +174,8 @@ def get_sql_dashboard(table_name : str):
 @require_project
 def execute_sql(query_str: str):
     global conn
-    data = conn.execute(query_str).fetchall()
-    columns = [desc[0] for desc in conn.description]
-    results = [dict(zip(columns, row)) for row in data]
+    # Use pandas to handle datetime serialization
+    df = conn.execute(query_str).df()
+    results = json.loads(df.to_json(orient='records'))
 
     return JSONResponse({"results" : results})

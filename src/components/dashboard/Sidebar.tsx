@@ -38,7 +38,7 @@ export default function Sidebar({
 
   if (collapsed) {
     return (
-      <div className="w-14 h-full bg-bg-secondary border-r border-border flex flex-col items-center py-4 gap-3 shrink-0">
+      <div className="w-14 h-full bg-bg-secondary border-r border-border flex flex-col items-center py-4 gap-3 shrink-0 transition-all duration-300 ease-in-out">
         <button onClick={() => setCollapsed(false)}
           className="w-9 h-9 rounded-lg flex items-center justify-center text-text-muted hover:text-text hover:bg-bg transition-all"
           title="Expand sidebar">
@@ -78,7 +78,7 @@ export default function Sidebar({
   }
 
   return (
-    <div className="w-64 h-full bg-bg-secondary border-r border-border flex flex-col shrink-0">
+    <div className="w-64 h-full bg-bg-secondary border-r border-border flex flex-col shrink-0 transition-all duration-300 ease-in-out">
       {/* Header */}
       <div className="px-4 py-4 border-b border-border">
         <div className="flex items-center justify-between mb-3">
