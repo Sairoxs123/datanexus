@@ -9,6 +9,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 import admin
 from functools import wraps
+import json
 
 sqlite_url = "sqlite:///database.db"
 connect_args = {"check_same_thread" : False}
@@ -141,16 +142,42 @@ def select_current_project(project_id: int, session: SessionDep):
 
     return JSONResponse({"message" : "Project selected successfully"})
 
-@app.get("/project/dashboard")
+@app.get("/project/sql/dashboard")
 @require_project
 def get_project_dashboard():
     global conn
     tables = conn.execute("SHOW TABLES;").fetchall()
-    return JSONResponse({"tables" : tables})
+    schemas = []
+    for i in tables:
+        table = i[0]
+        schema = conn.execute(f"DESC {table};").fetchall()
+        schemas.append(schema)
+    return JSONResponse({"tables" : tables, "schemas" : schemas})
+
+@app.get("/sql/get-selected-table-data")
+@require_project
+def gettabledata(table_name : str, offset : int = 0):
+    global conn
+    # Get rows as list of tuples
+    rows = conn.execute(f"SELECT * FROM {table_name} LIMIT 100 OFFSET {offset};").fetchall()
+
+    if offset == 0:
+        row_count = conn.execute(f"SELECT COUNT(*) from {table_name};").fetchall()
+        return JSONResponse({"rows" : rows, "row_count" : row_count})
+
+    return JSONResponse({"rows" : rows})
+
+@app.get("/sql/display/rows")
+@require_project
+def get_sql_dashboard(table_name : str):
+    global conn
+    rows = conn.execute(f"SELECT * FROM {table_name} LIMIT 100 OFFSET 0;")
+
+    return JSONResponse({"rows" : rows})
 
 @app.post("/execute-sql")
 @require_project
-def execute_sql(query_str: str, session: SessionDep):
+def execute_sql(query_str: str):
     global conn
     data = conn.execute(query_str).fetchall()
     columns = [desc[0] for desc in conn.description]

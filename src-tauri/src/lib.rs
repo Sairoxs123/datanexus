@@ -13,8 +13,6 @@ fn greet(name: &str) -> String {
 
 #[cfg(windows)]
 fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
-    use std::os::windows::process::CommandExt;
-
     // Use 'cmd /C start' instead of direct spawning.
     // This allows the OS to do the heavy lifting of window creation and stdio setup.
     // While we lose the direct PID of python (we get cmd's PID),
@@ -26,7 +24,7 @@ fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
             "DataNexus Backend",
             "cmd",
             "/k",
-            "python -m uvicorn main:app --reload",
+            "call .\\venv\\Scripts\\activate && python -m uvicorn main:app --reload",
         ])
         .current_dir(backend_path)
         .spawn();
