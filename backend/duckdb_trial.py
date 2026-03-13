@@ -15,6 +15,6 @@ print(result)'''
 # conn.execute("CREATE TABLE BLAHBLAH (name varchar)")
 
 # Option 3: Fetch one row at a time
-result = conn.execute("SELECT COUNT(*) FROM yellow_tripdata_2025_01").fetchall()
-for row in result:
-    print(row)
+result = conn.execute("SELECT * FROM (SELECT * FROM yellow_tripdata_2025_01 LIMIT 0)")
+for col in result.description:
+    print(col)

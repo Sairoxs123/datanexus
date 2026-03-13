@@ -15,8 +15,10 @@ sqlite_url = "sqlite:///database.db"
 connect_args = {"check_same_thread" : False}
 engine = create_engine(sqlite_url, connect_args=connect_args)
 
+selected_project = None
+
 class Project(SQLModel, table=True):
-    id : int | None = Field(default=0, primary_key=True)
+    id : int | None = Field(default=None, primary_key=True)
     name : str
     created_at : datetime = Field(default_factory=datetime.now)
 
@@ -137,8 +139,9 @@ def select_current_project(project_id: int, session: SessionDep):
         return JSONResponse({"error" : "Invalid project ID"}, status_code=404)
 
     folder_path = project.name.replace(" ", "_")
-    global conn
+    global conn, selected_project
     conn = duckdb.connect(f"{folder_path}/project.duckdb", read_only=False)
+    selected_project = project.name
 
     return JSONResponse({"message" : "Project selected successfully"})
 
@@ -162,14 +165,6 @@ def gettabledata(table_name : str, offset : int = 0, limit : int = 100):
 
     return JSONResponse({"rows" : rows})
 
-@app.get("/sql/display/rows")
-@require_project
-def get_sql_dashboard(table_name : str):
-    global conn
-    rows = conn.execute(f"SELECT * FROM {table_name} LIMIT 100 OFFSET 0;")
-
-    return JSONResponse({"rows" : rows})
-
 @app.post("/execute-sql")
 @require_project
 def execute_sql(query_str: str):
@@ -179,3 +174,30 @@ def execute_sql(query_str: str):
     results = json.loads(df.to_json(orient='records'))
 
     return JSONResponse({"results" : results})
+
+@app.post("/fetch-query-format")
+@require_project
+def fetch_query_format(query_str: str):
+    global conn
+    try:
+        dry_run_query = f"SELECT * FROM ({query_str}) LIMIT 0"
+        result = conn.execute(dry_run_query)
+
+        schema = []
+        for col in result.description:
+            col_name = col[0]
+            col_type = str(col[1])
+
+            if col_type in ["BIGINT", "INTEGER", "DOUBLE", "FLOAT"]:
+                ui_type = "numeric"
+            elif col_type in ["DATE", "TIMESTAMP"]:
+                ui_type = "temporal"
+            else:
+                ui_type = "categorical"
+
+            schema.append({"name": col_name, "type": ui_type})
+
+        return JSONResponse({"status": "valid", "schema": schema})
+
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
