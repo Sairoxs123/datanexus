@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import LandingPage from "./components/LandingPage";
 import ProjectList from "./components/ProjectList";
-import Dashboard from "./components/dashboard/Dashboard";
+import ProjectHome from "./components/ProjectHome";
 import api from "./utils/api";
 
 interface Project {
@@ -78,7 +78,7 @@ function App() {
       );
     case "dashboard":
       return (
-        <Dashboard
+        <ProjectHome
           projectName={selectedProject?.name ?? "Project"}
           tables={tables}
           onTablesChange={setTables}

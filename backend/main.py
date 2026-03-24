@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from typing import List
 import duckdb
 from typing import Annotated
 from sqlmodel import SQLModel, Field, Session, create_engine, select
@@ -27,6 +28,16 @@ class DataIngestionRequest(BaseModel):
 
 class CreateProjectRequest(BaseModel):
     project_name: str
+
+class SQLVariable(BaseModel):
+    name: str
+    default: str
+    type: str
+    description: str | None = None
+
+class ValidateSQLRequest(BaseModel):
+    query_str: str
+    variables: List[SQLVariable] | None = None
 
 def get_session():
     with Session(engine) as session:
@@ -177,11 +188,14 @@ def execute_sql(query_str: str):
 
 @app.post("/fetch-query-format")
 @require_project
-def fetch_query_format(query_str: str):
+def fetch_query_format(request: ValidateSQLRequest):
     global conn
     try:
-        dry_run_query = f"SELECT * FROM ({query_str}) LIMIT 0"
-        result = conn.execute(dry_run_query)
+
+        params = {var.name: var.default for var in request.variables} if request.variables else {}
+
+        dry_run_query = f"SELECT * FROM ({request.query_str}) LIMIT 0"
+        result = conn.execute(dry_run_query, params)
 
         schema = []
         for col in result.description:
