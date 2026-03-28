@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, Loader2, AlertCircle, Table2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, AlertCircle, Basecards, Table2 } from "lucide-react";
 import api from "../../utils/api";
 import VirtualDataTable from "./VirtualDataTable";
 
@@ -22,18 +22,15 @@ export default function TableViewer({ tableName }: TableViewerProps) {
     setLoading(true);
     setError("");
     try {
-      // Get actual data (pandas returns array of objects with orient='records')
       const dataResp = await api.get("/sql/get-selected-table-data", {
         params: { table_name: table, offset: pageOffset, limit },
       });
 
       const rowsData: Array<Record<string, unknown>> = dataResp.data.rows ?? [];
 
-      // Extract column names from first row if available
       if (rowsData.length > 0) {
         setColumns(Object.keys(rowsData[0]));
       } else {
-        // If no rows, get columns from DESCRIBE
         const descResp = await api.post("/execute-sql", null, {
           params: { query_str: `DESCRIBE ${table}` },
         });
@@ -50,7 +47,7 @@ export default function TableViewer({ tableName }: TableViewerProps) {
         setRowCount(Number(count));
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || "Failed to load table data");
+      setError(err.response?.data?.error || "Failed to fetch table data");
     } finally {
       setLoading(false);
     }
@@ -90,10 +87,10 @@ export default function TableViewer({ tableName }: TableViewerProps) {
 
   if (!tableName) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-bg-secondary">
-        <div className="text-center">
-          <Table2 className="w-16 h-16 text-text-faint mx-auto mb-4" strokeWidth={1.5} />
-          <p className="text-text-muted">Select a table to view its data</p>
+      <div className="flex-1 flex items-center justify-center bg-transparent">
+        <div className="flex items-center gap-3 text-on-surface-variant">
+          <Table2 className="w-5 h-5" />
+          <span className="text-sm font-medium">Select a table from the sidebar</span>
         </div>
       </div>
     );
@@ -103,31 +100,29 @@ export default function TableViewer({ tableName }: TableViewerProps) {
   const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-bg-secondary">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3.5 border-b border-border bg-bg-secondary shrink-0">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant shrink-0 bg-white">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <Table2 className="w-5 h-5 text-primary" strokeWidth={2} />
-            <h2 className="text-base font-semibold text-text">{tableName}</h2>
-          </div>
+          <h2 className="text-lg font-bold text-on-surface truncate pr-2 border-r border-outline-variant">{tableName}</h2>
+          
           {rowCount > 0 && (
-            <span className="text-xs text-text-muted bg-bg-tertiary px-2.5 py-1 rounded-md border border-border-light font-medium">
+            <span className="text-sm font-medium text-on-surface-variant">
               {rowCount.toLocaleString()} rows
             </span>
           )}
         </div>
 
-        {/* Pagination & Controls */}
+        {/* Controls */}
         <div className="flex items-center gap-4">
-          {/* Page Size Selector */}
+          {/* Page Size */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted font-medium">Rows per page:</span>
+            <span className="text-sm font-medium text-on-surface-variant">Rows per page:</span>
             <select
               value={pageSize}
               onChange={(e) => handlePageSizeChange(Number(e.target.value))}
               disabled={loading}
-              className="text-sm px-2.5 py-1.5 rounded-md border border-border bg-bg-secondary text-text font-medium hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-40 cursor-pointer"
+              className="text-sm font-medium px-2 py-1.5 rounded-md border border-outline-variant bg-surface text-on-surface hover:border-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors disabled:opacity-50 cursor-pointer outline-none"
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>
@@ -137,63 +132,60 @@ export default function TableViewer({ tableName }: TableViewerProps) {
             </select>
           </div>
 
-          {/* Pagination */}
-          {rowCount > pageSize && (
-            <>
-              <div className="w-px h-5 bg-border" />
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-text-muted font-medium">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={handlePrev}
-                    disabled={offset === 0 || loading}
-                    className="w-8 h-8 rounded-md flex items-center justify-center text-text-secondary hover:text-text hover:bg-bg-hover border border-border transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleNext}
-                    disabled={offset + pageSize >= rowCount || loading}
-                    className="w-8 h-8 rounded-md flex items-center justify-center text-text-secondary hover:text-text hover:bg-bg-hover border border-border transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="h-5 w-px bg-outline-variant" />
+
+          {/* Navigation */}
+          <div className="flex items-center gap-3">
+             <span className="text-sm font-medium text-on-surface pr-1">
+               {currentPage} of {totalPages}
+             </span>
+             
+             <div className="flex gap-1">
+                <button
+                  onClick={handlePrev}
+                  disabled={offset === 0 || loading}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-on-surface hover:bg-surface-dim transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleNext}
+                  disabled={offset + pageSize >= rowCount || loading}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-on-surface hover:bg-surface-dim transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+             </div>
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center bg-bg-secondary">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 text-primary animate-spin" />
-            <span className="text-text-muted">Loading data...</span>
+      {/* Grid Container */}
+      <div className="flex-1 min-h-0 relative overflow-hidden bg-white">
+        {loading ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm z-50">
+            <Loader2 className="w-6 h-6 text-primary animate-spin mb-2" />
+            <span className="text-sm font-medium text-on-surface">Loading data...</span>
           </div>
-        </div>
-      ) : error ? (
-        <div className="flex-1 flex items-center justify-center bg-bg-secondary">
-          <div className="flex items-center gap-3 px-4 py-3 bg-error-light border border-error/20 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-error shrink-0" />
-            <span className="text-error text-sm font-medium">{error}</span>
+        ) : error ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="flex items-start gap-3 p-4 bg-error/10 border border-error/20 rounded-lg text-error max-w-md">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <div>
+                <h3 className="font-semibold text-sm mb-1">Error Loading Data</h3>
+                <p className="text-sm text-error/80">{error}</p>
+              </div>
+            </div>
           </div>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center bg-bg-secondary">
-          <p className="text-text-muted">No data in this table</p>
-        </div>
-      ) : (
-        <VirtualDataTable
-          columns={columns}
-          rows={rows}
-          rowNumberOffset={offset}
-          emptyText="No rows in this table"
-        />
-      )}
+        ) : (
+          <VirtualDataTable
+            columns={columns}
+            rows={rows}
+            rowNumberOffset={offset}
+            emptyText="No rows found"
+          />
+        )}
+      </div>
     </div>
   );
 }

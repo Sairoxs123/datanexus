@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Database } from "lucide-react";
+import { Table2 } from "lucide-react";
 
 interface VirtualDataTableProps {
   columns: string[];
@@ -9,16 +9,16 @@ interface VirtualDataTableProps {
   emptyText?: string;
 }
 
-const ROW_NUM_WIDTH = 56;
-const COL_WIDTH = 160;
-const ROW_HEIGHT = 40;
+const ROW_NUM_WIDTH = 64;
+const COL_WIDTH = 180;
+const ROW_HEIGHT = 44;
 const HEADER_HEIGHT = 44;
 
 export default function VirtualDataTable({
   columns,
   rows,
   rowNumberOffset = 0,
-  emptyText = "No data available",
+  emptyText = "No data found.",
 }: VirtualDataTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -31,53 +31,48 @@ export default function VirtualDataTable({
 
   const virtualRows = rowVirtualizer.getVirtualItems();
 
-  // Fixed pixel widths — header and rows always share the same template
   const gridTemplate = useMemo(
     () => `${ROW_NUM_WIDTH}px ${columns.map(() => `${COL_WIDTH}px`).join(" ")}`,
     [columns]
   );
 
-  // Total table width used to size rows absolutely to prevent column squishing
   const totalWidth = useMemo(
     () => ROW_NUM_WIDTH + columns.length * COL_WIDTH,
     [columns]
   );
 
   const cellBase =
-    "px-3 flex items-center justify-center text-sm text-text overflow-hidden";
+    "px-4 flex items-center text-sm text-on-surface border-r border-outline-variant last:border-r-0 tracking-tight whitespace-nowrap overflow-hidden";
   const headerCellBase =
-    "px-3 flex items-center justify-center text-xs font-semibold uppercase tracking-wider text-text-secondary";
+    "px-4 flex items-center text-xs font-semibold text-on-surface-variant border-r border-outline-variant last:border-r-0";
 
   if (rows.length === 0) {
     return (
-      <div className="flex-1 h-full flex flex-col items-center justify-center bg-bg-secondary">
-        <Database className="w-16 h-16 text-text-faint mb-4" strokeWidth={1.5} />
-        <p className="text-text-muted text-sm">{emptyText}</p>
+      <div className="flex-1 h-full flex flex-col items-center justify-center bg-surface">
+        <div className="w-16 h-16 rounded-full bg-surface-dim flex items-center justify-center mb-4">
+          <Table2 className="w-8 h-8 text-outline" />
+        </div>
+        <p className="text-sm font-medium text-on-surface-variant">{emptyText}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 h-full overflow-hidden bg-bg-secondary">
-      {/*
-        Single scroll container — both axes scroll here.
-        Header sits inside with position: sticky; top: 0 so it:
-          - scrolls horizontally WITH the data
-          - stays pinned to the top while scrolling vertically
-      */}
+    <div className="flex-1 h-full overflow-hidden bg-surface">
       <div ref={parentRef} className="h-full overflow-auto">
-        {/* Min-width wrapper so the scroll container knows the true content width */}
         <div style={{ minWidth: totalWidth }}>
-          {/* Sticky header */}
+          {/* Header */}
           <div
-            className="sticky top-0 z-10 bg-bg-tertiary border-b border-border"
+            className="sticky top-0 z-20 bg-surface-dim border-b border-outline-variant shadow-sm"
             style={{
               display: "grid",
               gridTemplateColumns: gridTemplate,
               height: HEADER_HEIGHT,
             }}
           >
-            <div className={headerCellBase + " text-text-muted"}>#</div>
+            <div className={headerCellBase + " justify-center text-outline"}>
+              #
+            </div>
             {columns.map((col) => (
               <div
                 key={col}
@@ -89,11 +84,11 @@ export default function VirtualDataTable({
             ))}
           </div>
 
-          {/* Virtualized rows */}
+          {/* Rows */}
           <div
+            className="relative"
             style={{
               height: `${rowVirtualizer.getTotalSize()}px`,
-              position: "relative",
             }}
           >
             {virtualRows.map((virtualRow) => {
@@ -101,7 +96,9 @@ export default function VirtualDataTable({
               return (
                 <div
                   key={virtualRow.index}
-                  className="absolute hover:bg-bg-hover transition-colors border-b border-border-light"
+                  className={`absolute hover:bg-surface-container-highest transition-colors border-b border-outline-variant/50 ${
+                    virtualRow.index % 2 === 0 ? "bg-white" : "bg-surface-dim/30"
+                  }`}
                   style={{
                     top: virtualRow.start,
                     height: virtualRow.size,
@@ -110,23 +107,27 @@ export default function VirtualDataTable({
                     gridTemplateColumns: gridTemplate,
                   }}
                 >
-                  {/* Row number */}
-                  <div className={cellBase + " text-text-muted font-mono text-xs"}>
+                  {/* Row Number */}
+                  <div className="px-3 flex items-center justify-center text-xs text-on-surface-variant/50 border-r border-outline-variant">
                     {rowNumberOffset + virtualRow.index + 1}
                   </div>
-                  {/* Data cells */}
+                  
+                  {/* Cells */}
                   {columns.map((col) => {
                     const value = row[col];
+                    const isNull = value == null;
                     return (
                       <div
                         key={col}
                         className={cellBase + " truncate"}
-                        title={value == null ? "" : String(value)}
+                        title={isNull ? "null" : String(value)}
                       >
-                        {value == null ? (
-                          <span className="text-text-faint italic text-xs">NULL</span>
+                        {isNull ? (
+                          <span className="text-on-surface-variant/40 italic">null</span>
                         ) : (
-                          String(value)
+                          <span className="truncate">
+                            {String(value)}
+                          </span>
                         )}
                       </div>
                     );

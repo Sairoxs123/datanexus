@@ -56,7 +56,7 @@ export default function Dashboard({
   const handleSelectTable = (table: string) => { setSelectedTable(table); setActiveTab("data"); };
 
   return (
-    <div className="h-screen flex overflow-hidden bg-bg-secondary">
+    <div className="h-screen flex overflow-hidden bg-surface">
       <Sidebar
         projectName={projectName}
         tables={tables}
@@ -69,13 +69,17 @@ export default function Dashboard({
         onBackToProjects={onBackToProjects}
         loading={refreshing}
       />
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
-        {activeTab === "data" ? (
-          <TableViewer tableName={selectedTable} />
-        ) : (
-          <SQLEditor />
-        )}
+      
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-surface-dim">
+        <div className="flex-1 flex flex-col min-h-0 bg-white shadow-sm ring-1 ring-outline-variant rounded-tl-xl overflow-hidden m-4">
+          {activeTab === "data" ? (
+            <TableViewer tableName={selectedTable} />
+          ) : (
+            <SQLEditor />
+          )}
+        </div>
       </main>
+
       {showIngestModal && (
         <DataIngestModal
           onClose={() => setShowIngestModal(false)}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Play, Loader2, AlertCircle, Clock, CheckCircle2 } from "lucide-react";
+import { Play, Loader2, AlertCircle, Clock, CheckCircle2, Terminal } from "lucide-react";
 import api from "../../utils/api";
 import VirtualDataTable from "./VirtualDataTable";
 
@@ -17,7 +17,7 @@ export default function SQLEditor() {
     const ta = textareaRef.current;
     if (ta) {
       ta.style.height = "auto";
-      ta.style.height = Math.max(120, Math.min(ta.scrollHeight, 300)) + "px";
+      ta.style.height = Math.max(160, Math.min(ta.scrollHeight, 400)) + "px";
     }
   }, [query]);
 
@@ -51,12 +51,10 @@ export default function SQLEditor() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Ctrl/Cmd + Enter to execute
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       executeQuery();
     }
-    // Tab to indent
     if (e.key === "Tab") {
       e.preventDefault();
       const ta = e.target as HTMLTextAreaElement;
@@ -70,97 +68,111 @@ export default function SQLEditor() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-bg-secondary">
-      {/* Editor area */}
-      <div className="px-6 py-4 border-b border-border shrink-0 bg-bg-secondary">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-text">SQL Query</h3>
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
+      {/* Editor Region */}
+      <div className="px-6 py-5 shrink-0 bg-surface-dim border-b border-outline-variant">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <span className="text-xs text-text-muted">Ctrl+Enter to execute</span>
+             <div className="w-8 h-8 rounded-lg bg-white border border-outline-variant flex items-center justify-center shadow-sm text-on-surface-variant">
+                <Terminal className="w-4 h-4" />
+             </div>
+             <div>
+                <h3 className="text-base font-bold text-on-surface tracking-tight">SQL Editor</h3>
+             </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-semibold text-on-surface-variant">Cmd/Ctrl + Enter to run</span>
             <button
               onClick={executeQuery}
               disabled={loading || !query.trim()}
-              className="btn btn-primary"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:hover:bg-primary shadow-sm"
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Play className="w-4 h-4" fill="currentColor" />
               )}
-              Execute
+              Run Query
             </button>
           </div>
         </div>
 
-        <textarea
-          ref={textareaRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="SELECT * FROM my_table LIMIT 10;"
-          spellCheck={false}
-          className="w-full px-4 py-3 rounded-lg bg-bg border border-border text-text placeholder-text-faint resize-none font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-          style={{ minHeight: 120 }}
-        />
+        <div className="relative rounded-xl overflow-hidden border border-outline shadow-sm bg-white">
+           <textarea
+            ref={textareaRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="-- Type your SQL query here. Press Cmd + Enter to run."
+            spellCheck={false}
+            className="w-full px-4 py-4 bg-transparent text-on-surface placeholder-on-surface-variant/50 resize-none font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/20"
+            style={{ minHeight: 160 }}
+          />
+        </div>
       </div>
 
-      {/* Status bar */}
-      {(executionTime !== null || error) && (
-        <div className="px-6 py-2.5 border-b border-border bg-bg-tertiary flex items-center gap-4 shrink-0">
-          {error ? (
-            <div className="flex items-center gap-2 text-error text-sm font-medium">
-              <AlertCircle className="w-4 h-4" />
-              {error}
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 text-success text-sm font-medium">
-                <CheckCircle2 className="w-4 h-4" />
-                Success
-              </div>
-              <div className="flex items-center gap-1.5 text-text-muted text-sm">
-                <Clock className="w-3.5 h-3.5" />
-                {executionTime! < 1000
-                  ? `${Math.round(executionTime!)}ms`
-                  : `${(executionTime! / 1000).toFixed(2)}s`}
-              </div>
-              {results && (
-                <span className="text-text-muted text-sm">
-                  {results.length} row{results.length !== 1 ? "s" : ""}
-                </span>
+      {/* Status Bar */}
+      <div className="px-6 py-2 flex items-center gap-6 shrink-0 bg-surface border-b border-outline-variant text-sm">
+         {(executionTime !== null || error) ? (
+           <div className="flex items-center gap-4">
+             {error ? (
+                <div className="flex items-center gap-1.5 text-error font-medium">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5 text-success font-medium">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Success
+                  </div>
+                  <div className="flex items-center gap-1.5 text-on-surface-variant">
+                    <Clock className="w-4 h-4" />
+                    {executionTime! < 1000
+                      ? `${Math.round(executionTime!)}ms`
+                      : `${(executionTime! / 1000).toFixed(2)}s`}
+                  </div>
+                  {results && (
+                    <div className="text-on-surface-variant">
+                      {results.length.toLocaleString()} rows returned
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
-      )}
+           </div>
+         ) : (
+           <div className="text-on-surface-variant italic">Ready</div>
+         )}
+      </div>
 
-      {/* Results */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center bg-bg-secondary">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 text-primary animate-spin" />
-            <span className="text-text-muted">Executing query...</span>
+      {/* Results View */}
+      <div className="flex-1 min-h-0 relative bg-white">
+        {loading ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm z-50">
+            <Loader2 className="w-6 h-6 text-primary animate-spin mb-3" />
+            <span className="text-sm font-medium text-on-surface">Executing query...</span>
           </div>
-        </div>
-      ) : results === null && !error ? (
-        <div className="flex-1 flex items-center justify-center bg-bg-secondary">
-          <div className="text-center">
-            <Play className="w-16 h-16 text-text-faint mx-auto mb-4" strokeWidth={1.5} />
-            <p className="text-text-muted">Write a query and press Execute</p>
+        ) : results === null && !error ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center text-on-surface-variant opacity-60">
+              <Terminal className="w-10 h-10 mx-auto mb-3" strokeWidth={1.5} />
+              <p className="text-sm font-medium">Run a query to view results</p>
+            </div>
           </div>
-        </div>
-      ) : results && results.length > 0 ? (
-        <VirtualDataTable
-          columns={columns}
-          rows={results}
-          rowNumberOffset={0}
-          emptyText="No rows returned"
-        />
-      ) : results && results.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center bg-bg-secondary">
-          <p className="text-text-muted">Query returned no results</p>
-        </div>
-      ) : null}
+        ) : results && results.length > 0 ? (
+          <VirtualDataTable
+            columns={columns}
+            rows={results}
+            rowNumberOffset={0}
+            emptyText="No rows returned"
+          />
+        ) : results && results.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant">
+            <p className="text-sm font-medium">Query executed successfully but returned 0 rows.</p>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

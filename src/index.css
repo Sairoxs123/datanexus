@@ -1,39 +1,73 @@
 @import "tailwindcss";
 
 @theme {
-  /* Modern Professional Color System */
-  --color-primary: #2563eb;
-  --color-primary-light: #3b82f6;
-  --color-primary-dark: #1d4ed8;
-  --color-primary-50: rgba(37, 99, 235, 0.04);
-  --color-primary-100: rgba(37, 99, 235, 0.08);
+  /* Clean Modern UI Theme */
+  --color-surface: #f8fafc; /* slate-50 */
+  --color-surface-bright: #ffffff;
+  --color-surface-dim: #f1f5f9; /* slate-100 */
+  
+  --color-surface-container-lowest: #ffffff; 
+  --color-surface-container-low: #ffffff;
+  --color-surface-container: #ffffff;
+  --color-surface-container-high: #f8fafc;
+  --color-surface-container-highest: #f1f5f9;
 
-  --color-accent: #0ea5e9;
-  --color-accent-light: #38bdf8;
-  --color-accent-dark: #0284c7;
+  --color-primary: #2563eb; /* blue-600 */
+  --color-primary-container: #dbeafe; /* blue-100 */
+  --color-secondary: #0ea5e9; /* sky-500 */
+  --color-secondary-container: #e0f2fe; /* sky-100 */
+  --color-tertiary: #8b5cf6; /* violet-500 */
+  --color-tertiary-container: #ede9fe; /* violet-100 */
 
-  --color-bg: #fafbfc;
-  --color-bg-secondary: #ffffff;
-  --color-bg-tertiary: #f6f8fa;
-  --color-bg-hover: #f3f4f6;
+  --color-on-surface: #0f172a; /* slate-900 */
+  --color-on-surface-variant: #475569; /* slate-600 */
+  --color-outline: #cbd5e1; /* slate-300 */
+  --color-outline-variant: #e2e8f0; /* slate-200 */
 
-  --color-border: #e5e7eb;
-  --color-border-light: #f3f4f6;
-  --color-border-dark: #d1d5db;
+  --color-error: #ef4444; /* red-500 */
+  --color-success: #10b981; /* emerald-500 */
 
-  --color-text: #111827;
-  --color-text-secondary: #374151;
-  --color-text-muted: #6b7280;
-  --color-text-faint: #9ca3af;
+  --font-sans: "Inter", sans-serif;
 
-  --color-success: #10b981;
-  --color-success-light: rgba(16, 185, 129, 0.08);
-  --color-error: #ef4444;
-  --color-error-light: rgba(239, 68, 68, 0.08);
-  --color-warning: #f59e0b;
+  /* Standard modern shadows */
+  --shadow-glass: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-neon: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+}
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.03);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.03);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-sans antialiased selection:bg-primary-container selection:text-primary;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-surface-container border border-outline-variant shadow-sm;
+  }
+  
+  .neon-glow {
+    /* Repurposed neon-glow to just a standard focus ring/shadow for modern UI */
+    @apply ring-2 ring-primary/20 ring-offset-1 ring-offset-surface;
+  }
+
+  .gradient-primary {
+    @apply bg-primary;
+  }
+  
+  .gradient-secondary {
+    @apply bg-secondary;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-up {
+  animation: fade-up 0.5s ease-out forwards;
 }

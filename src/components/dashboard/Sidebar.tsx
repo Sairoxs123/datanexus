@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Terminal,
   LayoutGrid,
+  Settings,
+  Activity,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -38,39 +40,35 @@ export default function Sidebar({
 
   if (collapsed) {
     return (
-      <div className="w-14 h-full bg-bg-secondary border-r border-border flex flex-col items-center py-4 gap-3 shrink-0 transition-all duration-300 ease-in-out">
+      <div className="w-16 h-full bg-surface-container border-r border-outline-variant flex flex-col items-center py-6 gap-6 shrink-0 transition-all duration-300">
         <button onClick={() => setCollapsed(false)}
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-text-muted hover:text-text hover:bg-bg transition-all"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
           title="Expand sidebar">
           <ChevronLeft className="w-4 h-4 rotate-180" />
         </button>
-        <div className="w-8 h-px bg-border" />
-        <button onClick={() => onTabChange("data")}
-          className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
-            activeTab === "data" ? "bg-primary-50 text-primary" : "text-text-muted hover:text-text hover:bg-bg"
-          }`} title="Data view">
-          <LayoutGrid className="w-4 h-4" />
-        </button>
-        <button onClick={() => onTabChange("sql")}
-          className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
-            activeTab === "sql" ? "bg-primary-50 text-primary" : "text-text-muted hover:text-text hover:bg-bg"
-          }`} title="SQL editor">
-          <Terminal className="w-4 h-4" />
-        </button>
-        <div className="w-8 h-px bg-border" />
-        {tables.map((table) => (
-          <button key={table} onClick={() => onSelectTable(table)}
-            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
-              selectedTable === table ? "bg-primary-50 text-primary" : "text-text-muted hover:text-text hover:bg-bg"
-            }`} title={table}>
-            <Table2 className="w-4 h-4" />
+        
+        <div className="w-8 h-px bg-outline-variant" />
+        
+        <nav className="flex flex-col gap-3">
+          <button onClick={() => onTabChange("data")}
+            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+              activeTab === "data" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest"
+            }`} title="Tables">
+            <LayoutGrid className="w-5 h-5" />
           </button>
-        ))}
-        <div className="mt-auto flex flex-col gap-2">
+          <button onClick={() => onTabChange("sql")}
+            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+              activeTab === "sql" ? "bg-primary text-white shadow-sm" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest"
+            }`} title="SQL Editor">
+            <Terminal className="w-5 h-5" />
+          </button>
+        </nav>
+
+        <div className="mt-auto flex flex-col gap-4">
           <button onClick={onIngestData}
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-primary hover:bg-bg transition-all"
-            title="Import data">
-            <Plus className="w-4 h-4" />
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-white bg-primary hover:bg-primary/90 transition-colors shadow-sm"
+            title="Import Data">
+            <Plus className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -78,79 +76,82 @@ export default function Sidebar({
   }
 
   return (
-    <div className="w-64 h-full bg-bg-secondary border-r border-border flex flex-col shrink-0 transition-all duration-300 ease-in-out">
-      {/* Header */}
-      <div className="px-4 py-4 border-b border-border">
-        <div className="flex items-center justify-between mb-3">
+    <div className="w-64 h-full bg-surface-container border-r border-outline-variant flex flex-col shrink-0 transition-all duration-300">
+      {/* Sidebar Header */}
+      <div className="px-5 py-6">
+        <div className="flex items-center justify-between mb-6">
           <button onClick={onBackToProjects}
-            className="flex items-center gap-1.5 text-xs text-text-muted hover:text-primary transition-colors font-medium">
-            <ChevronLeft className="w-3.5 h-3.5" />
+            className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors">
+            <ChevronLeft className="w-4 h-4" />
             Projects
           </button>
           <button onClick={() => setCollapsed(true)}
-            className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-text hover:bg-bg-hover transition-all"
+            className="w-6 h-6 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
             title="Collapse sidebar">
             <ChevronLeft className="w-4 h-4" />
           </button>
         </div>
+
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <Database className="w-5 h-5 text-primary" strokeWidth={2} />
           </div>
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-text truncate">{projectName}</h2>
-            <p className="text-xs text-text-muted">DuckDB Database</p>
+            <h2 className="text-sm font-semibold text-on-surface truncate">{projectName}</h2>
+            <div className="flex items-center gap-1.5 mt-0.5">
+               <div className="w-1.5 h-1.5 rounded-full bg-success" />
+               <p className="text-xs text-on-surface-variant">Connected</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* View tabs */}
-      <div className="px-4 pt-4 pb-2">
-        <div className="flex gap-1 p-1 bg-bg-tertiary rounded-lg">
+      {/* Mode Selectors */}
+      <div className="px-5 pb-5">
+        <div className="grid grid-cols-2 gap-1 p-1 bg-surface-container-highest rounded-lg border border-outline-variant">
           <button onClick={() => onTabChange("data")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-              activeTab === "data" ? "bg-bg-secondary text-text shadow-sm" : "text-text-muted hover:text-text"
+            className={`flex items-center justify-center gap-2 py-2 px-2 rounded-md text-xs font-semibold transition-all ${
+              activeTab === "data" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
             }`}>
             <LayoutGrid className="w-4 h-4" />
-            Data
+            Tables
           </button>
           <button onClick={() => onTabChange("sql")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-              activeTab === "sql" ? "bg-bg-secondary text-text shadow-sm" : "text-text-muted hover:text-text"
+            className={`flex items-center justify-center gap-2 py-2 px-2 rounded-md text-xs font-semibold transition-all ${
+              activeTab === "sql" ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
             }`}>
             <Terminal className="w-4 h-4" />
-            SQL
+            SQL Editor
           </button>
         </div>
       </div>
 
-      {/* Tables list */}
-      <div className="flex-1 overflow-y-auto px-4 py-2">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">Tables</span>
+      {/* Navigation Scroll Area */}
+      <div className="flex-1 overflow-y-auto px-3 py-2">
+        <div className="flex items-center justify-between mb-2 px-2">
+          <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Data Tables</span>
           <button onClick={onRefresh} disabled={loading}
-            className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-text hover:bg-bg-hover transition-all disabled:opacity-40"
+            className="w-6 h-6 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-50"
             title="Refresh tables">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
 
         {tables.length === 0 ? (
-          <div className="px-1 py-8 text-center">
-            <Table2 className="w-12 h-12 text-text-faint mx-auto mb-3" strokeWidth={1.5} />
-            <p className="text-sm text-text-muted font-medium">No tables yet</p>
-            <p className="text-xs text-text-faint mt-1">Import data to get started</p>
+          <div className="px-2 py-8 text-center rounded-lg border border-dashed border-outline-variant mt-2">
+            <Table2 className="w-8 h-8 text-outline mx-auto mb-2" strokeWidth={1} />
+            <p className="text-sm font-medium text-on-surface-variant">No tables found</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 mt-2">
             {tables.map((table) => (
               <button key={table} onClick={() => onSelectTable(table)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all ${
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors ${
                   selectedTable === table
                     ? "bg-primary/10 text-primary font-medium"
-                    : "text-text-secondary hover:bg-bg-hover hover:text-text"
+                    : "text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
                 }`}>
-                <Table2 className="w-4 h-4 shrink-0" />
+                <Table2 className={`w-4 h-4 ${selectedTable === table ? "text-primary" : "text-on-surface-variant/60"}`} />
                 <span className="text-sm truncate">{table}</span>
               </button>
             ))}
@@ -158,13 +159,18 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Bottom actions */}
-      <div className="p-4 border-t border-border">
+      {/* Lower Command Access */}
+      <div className="p-5 border-t border-outline-variant">
         <button onClick={onIngestData}
-          className="btn btn-primary w-full">
+          className="w-full py-2.5 rounded-lg bg-surface border border-outline-variant hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2 shadow-sm text-sm font-medium text-on-surface">
           <Plus className="w-4 h-4" />
           Import Data
         </button>
+        
+        <div className="flex items-center justify-center gap-6 mt-5">
+           <Settings className="w-4 h-4 text-on-surface-variant hover:text-on-surface cursor-pointer transition-colors" />
+           <Activity className="w-4 h-4 text-on-surface-variant hover:text-on-surface cursor-pointer transition-colors" />
+        </div>
       </div>
     </div>
   );
