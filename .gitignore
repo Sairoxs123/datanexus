@@ -29,3 +29,8 @@ __pycache__
 *.parquet
 .pnpm-store
 *.wal
+app_config.json
+database.db
+backend/database.db
+projects/
+**/projects/
