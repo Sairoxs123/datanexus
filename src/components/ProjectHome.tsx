@@ -4,14 +4,15 @@ import {
   Database,
   Table2,
   ArrowRight,
-  Sparkles,
   Loader2,
   AlertCircle,
   LayoutDashboard,
   BarChart3,
+  Trash2,
 } from "lucide-react";
 import Dashboard from "./dashboard/Dashboard";
 import GraphBuilder from "./dashboard/GraphBuilder";
+import GraphDetailView from "./dashboard/GraphDetailView";
 import GraphWidgetRenderer, {
   type ChartPoint,
   type GraphLayout,
@@ -26,7 +27,7 @@ interface ProjectHomeProps {
   onBackToProjects: () => void;
 }
 
-type View = "home" | "sql-dashboard" | "graph-builder";
+type View = "home" | "sql-dashboard" | "graph-builder" | "graph-detail";
 
 interface DashboardLayoutResponse {
   project_name: string;
@@ -67,6 +68,9 @@ export default function ProjectHome({
   const [widgets, setWidgets] = useState<WidgetCardData[]>([]);
   const [loadingLayout, setLoadingLayout] = useState(false);
   const [layoutError, setLayoutError] = useState<string | null>(null);
+  const [selectedGraphLayout, setSelectedGraphLayout] = useState<GraphLayout | null>(null);
+  const [deletingWidgetId, setDeletingWidgetId] = useState<string | null>(null);
+  const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     if (view !== "home") {
@@ -137,6 +141,99 @@ export default function ProjectHome({
     return `${successCount}/${widgets.length} charts active`;
   }, [widgets]);
 
+  const handleGraphClick = (layout: GraphLayout) => {
+    setSelectedGraphLayout(layout);
+    setView("graph-detail");
+  };
+
+  const handleDeleteClick = (widgetId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setWidgetToDelete(widgetId);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!widgetToDelete) return;
+
+    setDeletingWidgetId(widgetToDelete);
+    try {
+      await api.post("/delete-graph-widget", { widget_id: widgetToDelete });
+      // Refresh the widgets list
+      const getLayout = async () => {
+        setLoadingLayout(true);
+        setLayoutError(null);
+
+        try {
+          const layoutRes = await api.get<DashboardLayoutResponse>("/project/dashboard-layout");
+          const layoutWidgets = layoutRes.data.widgets ?? [];
+
+          if (layoutWidgets.length === 0) {
+            setWidgets([]);
+            return;
+          }
+
+          const results = await Promise.allSettled(
+            layoutWidgets.map(async (layout) => {
+              const chartRes = await api.post<{ results?: unknown[]; error?: string }>(
+                "/execute-chart-sql",
+                layout
+              );
+
+              if (chartRes.data.error) {
+                return {
+                  layout,
+                  points: [],
+                  error: chartRes.data.error,
+                } satisfies WidgetCardData;
+              }
+
+              return {
+                layout,
+                points: toChartPoints(chartRes.data.results ?? []),
+              } satisfies WidgetCardData;
+            })
+          );
+
+          const parsedWidgets: WidgetCardData[] = results.map((result, index) => {
+            if (result.status === "fulfilled") {
+              return result.value;
+            }
+
+            return {
+              layout: layoutWidgets[index],
+              points: [],
+              error: "Failed to load chart results for this widget.",
+            };
+          });
+
+          setWidgets(parsedWidgets);
+        } catch (error) {
+          console.error("Failed to load dashboard layout:", error);
+          setLayoutError("Failed to load dashboard widgets.");
+        } finally {
+          setLoadingLayout(false);
+        }
+      };
+
+      await getLayout();
+    } catch (err) {
+      console.error("Failed to delete widget:", err);
+      setLayoutError("Failed to delete widget. Please try again.");
+    } finally {
+      setDeletingWidgetId(null);
+      setWidgetToDelete(null);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setWidgetToDelete(null);
+  };
+
+  const handleWidgetDeleted = () => {
+    // This will be called when a widget is deleted from the detail view
+    // Refresh the widgets list by triggering the useEffect
+    setView("home");
+  };
+
   if (view === "sql-dashboard") {
     return (
       <Dashboard
@@ -150,6 +247,16 @@ export default function ProjectHome({
 
   if (view === "graph-builder") {
     return <GraphBuilder onBack={() => setView("home")} />;
+  }
+
+  if (view === "graph-detail" && selectedGraphLayout) {
+    return (
+      <GraphDetailView
+        layout={selectedGraphLayout}
+        onBack={() => setView("home")}
+        onWidgetDeleted={handleWidgetDeleted}
+      />
+    );
   }
 
   // Home view
@@ -199,7 +306,7 @@ export default function ProjectHome({
       {/* Content Canvas */}
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-7xl mx-auto">
-          
+
           {loadingLayout && (
             <div className="bg-surface rounded-xl border border-outline-variant p-20 flex flex-col items-center justify-center text-center shadow-sm">
               <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
@@ -226,7 +333,7 @@ export default function ProjectHome({
               <p className="text-sm text-on-surface-variant max-w-sm mx-auto">
                 Create your first chart to start visualizing your data on this dashboard.
               </p>
-              <button 
+              <button
                 onClick={() => setView("graph-builder")}
                 className="mt-6 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm">
                 Create First Chart <ArrowRight className="w-4 h-4" />
@@ -239,17 +346,38 @@ export default function ProjectHome({
               {widgets.map((widget, i) => (
                 <article
                   key={widget.layout.id}
-                  className="fade-up bg-surface rounded-xl border border-outline-variant p-6 h-full flex flex-col shadow-sm"
+                  className="fade-up bg-surface rounded-xl border border-outline-variant p-6 h-full flex flex-col shadow-sm hover:border-primary/30 hover:shadow-md transition-all cursor-pointer group"
                   style={{ animationDelay: `${i * 50}ms` }}
+                  onClick={() => handleGraphClick(widget.layout)}
                 >
                   <div className="flex items-start justify-between gap-4 mb-6">
-                    <div>
+                    <div className="flex-1">
                       <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1">{widget.layout.graph_type} Chart</div>
-                      <h3 className="text-lg font-semibold text-on-surface">{widget.layout.title}</h3>
+                      <h3 className="text-lg font-semibold text-on-surface group-hover:text-primary transition-colors">{widget.layout.title}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <BarChart3 className="w-5 h-5 text-primary" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteClick(widget.layout.id, e)}
+                        disabled={deletingWidgetId === widget.layout.id}
+                        className="opacity-0 group-hover:opacity-100 transition-all p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete widget"
+                      >
+                        {deletingWidgetId === widget.layout.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </button>
                     </div>
                   </div>
                   <div className="flex-1 min-h-[300px] relative">
-                    <GraphWidgetRenderer widget={widget} />
+                    <div className="absolute inset-0">
+                      <GraphWidgetRenderer widget={widget} height="h-full" />
+                    </div>
                   </div>
                 </article>
               ))}
@@ -257,6 +385,40 @@ export default function ProjectHome({
           )}
         </div>
       </main>
+
+      {/* Delete Confirmation Modal */}
+      {widgetToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-surface rounded-xl border border-outline-variant p-6 max-w-sm w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-on-surface mb-2">Delete Graph Widget</h3>
+            <p className="text-sm text-on-surface-variant mb-6">
+              Are you sure you want to delete this graph widget? This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                className="px-4 py-2 rounded-lg bg-surface border border-outline-variant text-sm font-medium text-on-surface hover:bg-surface-container-highest transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deletingWidgetId === widgetToDelete}
+                className="px-4 py-2 rounded-lg bg-error text-sm font-medium text-white hover:bg-error/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingWidgetId === widgetToDelete ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

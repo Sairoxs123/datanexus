@@ -12,9 +12,11 @@ import admin
 from functools import wraps
 import json
 import uuid
-from typing import Dict
+from fastapi.responses import StreamingResponse
 import pathlib
 import os
+from ai_agent import agent
+from langchain_core.messages import HumanMessage
 
 sqlite_url = "sqlite:///database.db"
 connect_args = {"check_same_thread" : False}
@@ -58,6 +60,9 @@ class GraphLayout(BaseModel):
     base_sql: str
     config: GraphConfig
 
+class DeleteWidgetRequest(BaseModel):
+    widget_id: str
+
 class ProjectDashboardLayout(BaseModel):
     project_name: str
     widgets: List[GraphLayout] | None = None
@@ -97,6 +102,13 @@ class ProjectDataHandler: # handles the JSON file for a project that stores dash
                     current_data.widgets = [w if w.id != layout.id else layout for w in current_data.widgets]
                 else:
                     current_data.widgets.append(layout)
+            json.dump(current_data.dict(), f, indent=4)
+
+    def delete_widget(self, widget_id: str):
+        os.makedirs(self.folder_path, exist_ok=True)
+        current_data: ProjectDashboardLayout = self.load_layout()
+        with open(self.file_path, "w") as f:
+            current_data.widgets = [w for w in current_data.widgets if w.id != widget_id]
             json.dump(current_data.dict(), f, indent=4)
 
 sqlite_url = "sqlite:///database.db"
@@ -290,19 +302,6 @@ def get_dashboard_layout():
     layout = project_data_handler.load_layout()
     return JSONResponse(layout.dict())
 
-@app.post("/execute-chart-sql")
-@require_project
-def execute_chart_sql(graph: GraphLayout):
-    global conn
-    sql = generate_chart_sql(graph)
-    print(graph.json())
-    variables = {var.name: var.default for var in graph.config.variables} if graph.config.variables else {}
-    print("Generated SQL for graph:", sql)
-    print("With variables:", variables)
-    df = conn.execute(sql, variables).df()
-    results = json.loads(df.to_json(orient='records'))
-    return JSONResponse({"results" : results})
-
 @app.get("/project/sql/dashboard")
 @require_project
 def get_project_dashboard():
@@ -385,3 +384,56 @@ def save_graph_layout(request: GraphLayout):
     print("Saving graph layout:", request)
     project_data_handler.save_layout(request)
     return JSONResponse({"message": "Graph layout saved successfully."})
+
+@app.post("/execute-chart-sql")
+@require_project
+def execute_chart_sql(graph: GraphLayout):
+    global conn
+    sql = generate_chart_sql(graph)
+    variables = {var.name: var.default for var in graph.config.variables} if graph.config.variables else {}
+    df = conn.execute(sql, variables).df()
+    results = json.loads(df.to_json(orient='records'))
+    return JSONResponse({"results" : results})
+
+@app.post("/delete-graph-widget")
+@require_project
+def delete_graph_widget(request: DeleteWidgetRequest):
+    global project_data_handler
+    project_data_handler.delete_widget(request.widget_id)
+    return JSONResponse({"message": "Graph widget deleted successfully."})
+
+@app.post("/create-ai-chat")
+@require_project
+def create_ai_chat(message: str):
+    thread_id = str(uuid.uuid4())
+    return thread_id
+
+class ChatRequest(BaseModel):
+    thread_id: str
+    message: str
+
+@app.post("/send-ai-message")
+@require_project
+async def send_ai_message(request: ChatRequest):
+    config = {
+        "configurable" : {
+            "thread_id" : request.thread_id,
+            "conn": conn
+        }
+    }
+
+    new_input = {"messages": [HumanMessage(content=request.message)]}
+
+    async def event_generator():
+        async for event in agent.astream_events(new_input, config=config, version="v2"):
+            if event["event"] == "on_chat_model_stream" and event["metadata"].get("langgraph_node") == "synthesizer_node":
+                chunk = event["data"]["chunk"].content
+                if chunk:
+                    yield f"data: {json.dumps({'text': chunk})}\n\n"
+
+                elif event["event"] == "on_tool_start":
+                    yield f"data: {json.dumps({'status': 'Running database query...'})}\n\n"
+
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
