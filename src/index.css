@@ -71,3 +71,30 @@
 .fade-up {
   animation: fade-up 0.5s ease-out forwards;
 }
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.slide-in-right {
+  animation: slide-in-right 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: cursor-blink 0.8s ease-in-out infinite;
+}
+
+@keyframes thread-name-fade {
+  0% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.thread-name-animate {
+  animation: thread-name-fade 0.4s ease-out forwards;
+}

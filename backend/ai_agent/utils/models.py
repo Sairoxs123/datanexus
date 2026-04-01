@@ -1,6 +1,6 @@
 from langchain_ollama import ChatOllama
 import os
-from schemas import ExecutionPlan
+from ai_agent.utils.schemas import ExecutionPlan, GeneratedQuery
 
 def get_safe_thread_count():
     logical_cores = os.cpu_count() or 4
@@ -8,7 +8,20 @@ def get_safe_thread_count():
     safe_threads = max(1, physical_cores - 1)
     return safe_threads
 
-analyst_llm = ChatOllama(model="qwen3:4b", temperature=0.7, num_ctx=8192, n=get_safe_thread_count())
-sql_generator_llm = ChatOllama(model="qwen3:4b", temperature=0.0, num_ctx=8192, n=get_safe_thread_count())
-synthesizer_llm = ChatOllama(model="qwen3:4b", temperature=0.8, num_ctx=8192, n=get_safe_thread_count())
-router_llm = ChatOllama(model="qwen3:4b", temperature=0.4, num_ctx=8192, n=get_safe_thread_count()).with_structured_output(ExecutionPlan)
+def _make_llm(temperature: float, **kwargs):
+    """Returns a ChatOllama with Qwen 3 thinking disabled.
+    `think` must be a root-level Ollama API body param, not an option."""
+    return ChatOllama(
+        model="gemma3:4b",
+        temperature=temperature,
+        num_ctx=8192,
+        num_thread=get_safe_thread_count(),
+        extra_body={"think": False},
+        **kwargs,
+    )
+
+analyst_llm = _make_llm(temperature=0.7)
+sql_generator_llm = _make_llm(temperature=0.0).with_structured_output(GeneratedQuery)
+synthesizer_llm = _make_llm(temperature=0.8)
+router_llm = _make_llm(temperature=0.4).with_structured_output(ExecutionPlan)
+

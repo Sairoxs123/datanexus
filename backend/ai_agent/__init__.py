@@ -1,1 +1,1 @@
-from agent import agent
+from ai_agent.agent import init_agent, get_agent, close_agent

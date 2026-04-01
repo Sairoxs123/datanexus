@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -15,8 +15,22 @@ import uuid
 from fastapi.responses import StreamingResponse
 import pathlib
 import os
-from ai_agent import agent
-from langchain_core.messages import HumanMessage
+from ai_agent import init_agent, get_agent, close_agent
+from langchain_core.messages import HumanMessage, AIMessage
+from ai_agent.utils import synthesizer_llm
+from ai_agent.utils.messages import CanvasMessage
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 sqlite_url = "sqlite:///database.db"
 connect_args = {"check_same_thread" : False}
@@ -28,6 +42,13 @@ class Project(SQLModel, table=True):
     id : int | None = Field(default=None, primary_key=True)
     name : str
     created_at : datetime = Field(default_factory=datetime.now)
+
+class ChatSession(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    project_id: int = Field(foreign_key="project.id")
+    name: str = Field(default="New Chat")
+    created_at: datetime = Field(default_factory=datetime.now)
+    last_message_time: datetime = Field(default_factory=datetime.now)
 
 class DataIngestionRequest(BaseModel):
     file_path: str
@@ -169,10 +190,12 @@ def load_active_project():
 
 def initialize_project_connection(project: Project):
     global conn, selected_project, project_data_handler
+    logger.info(f"Initializing connection for project: {project.name}")
     folder_path = project.name.replace(" ", "_")
     project_data_handler = ProjectDataHandler(project_name=project.name)
     conn = duckdb.connect(f"projects/{folder_path}/project.duckdb", read_only=False)
     selected_project = project.name
+    logger.info(f"Project connection established for: {project.name}")
 
 def get_session():
     with Session(engine) as session:
@@ -188,24 +211,35 @@ def require_project(func):
     def wrapper(*args, **kwargs):
         global conn, project_data_handler
         if not conn or not project_data_handler:
+            logger.warning("Attempted to run a function requiring a project, but no project is selected.")
             return JSONResponse({"error" : "Project not selected."}, status_code=401)
         return func(*args, **kwargs)
     return wrapper
 
 @asynccontextmanager
 async def lifespan(app : FastAPI):
+    logger.info("Starting up application...")
     SQLModel.metadata.create_all(engine)
 
     # Try to restore last session
     last_project_id = load_active_project()
     if last_project_id:
+        logger.info(f"Checking last active project session: {last_project_id}")
         with Session(engine) as session:
             project = session.exec(select(Project).where(Project.id == last_project_id)).first()
             if project:
                 initialize_project_connection(project)
-                print(f"Restored session for project: {project.name}")
+                logger.info(f"Restored session for project: {project.name}")
+
+    logger.info("Initializing AI agent...")
+    await init_agent()
+    logger.info("Application startup complete.")
 
     yield
+
+    logger.info("Shutting down application...")
+    await close_agent()
+    logger.info("Application shutdown complete.")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -232,9 +266,11 @@ def index(session: SessionDep):
 
 @app.post("/create-new-project")
 def create_new_project(request: CreateProjectRequest, session: SessionDep):
+    logger.info(f"Attempting to create new project: {request.project_name}")
     # Check if project already exists
     existing = session.exec(select(Project).where(Project.name == request.project_name)).first()
     if existing:
+        logger.warning(f"Project creation failed, name already exists: {request.project_name}")
         return JSONResponse({"error": "Project name already exists."}, status_code=409)
 
     # Create new project
@@ -253,12 +289,13 @@ def create_new_project(request: CreateProjectRequest, session: SessionDep):
     # Save as active session
     save_active_project(project.id)
 
+    logger.info(f"Successfully created project: {request.project_name}")
     return JSONResponse({"message": "Project created."}, status_code=201)
 
 @app.post("/ingest-data")
 @require_project
 def ingest_data(request: DataIngestionRequest):
-
+    logger.info(f"Ingesting data from {request.file_path}")
     global conn
     file_path = request.file_path
     file_chunks = file_path.split("\\")
@@ -402,11 +439,36 @@ def delete_graph_widget(request: DeleteWidgetRequest):
     project_data_handler.delete_widget(request.widget_id)
     return JSONResponse({"message": "Graph widget deleted successfully."})
 
+async def generate_chat_name(thread_id: str, first_message: str, session: Session):
+    prompt = f"Summarize this into a 3-word title: {first_message}. Output ONLY the title."
+
+    title = await synthesizer_llm.ainvoke(prompt)
+    title = title.content.strip().replace('"', '')
+
+    logger.info(f"Generated chat title: '{title}' for thread_id: {thread_id} based on first message: '{first_message}'")
+
+    db_session = session
+    chat = db_session.get(ChatSession, thread_id)
+    if chat:
+        chat.name = title
+        db_session.add(chat)
+        db_session.commit()
+        db_session.refresh(chat)
+
 @app.post("/create-ai-chat")
 @require_project
-def create_ai_chat(message: str):
+def create_ai_chat(message: str, background_tasks: BackgroundTasks, session: SessionDep):
+    project = session.exec(select(Project).where(Project.name == selected_project)).first()
+
     thread_id = str(uuid.uuid4())
-    return thread_id
+
+    new_chat = ChatSession(id=thread_id, project_id=project.id, name="New Chat")
+    session.add(new_chat)
+    session.commit()
+
+    background_tasks.add_task(generate_chat_name, thread_id, message, session)
+
+    return JSONResponse({"thread_id": thread_id})
 
 class ChatRequest(BaseModel):
     thread_id: str
@@ -414,26 +476,123 @@ class ChatRequest(BaseModel):
 
 @app.post("/send-ai-message")
 @require_project
-async def send_ai_message(request: ChatRequest):
+async def send_ai_message(request: ChatRequest, session: SessionDep):
+    global conn
+    schema_info = conn.execute("DESCRIBE;").df().to_string()
+
     config = {
         "configurable" : {
             "thread_id" : request.thread_id,
-            "conn": conn
+            "conn": conn,
+            "table_schema": schema_info
         }
     }
 
     new_input = {"messages": [HumanMessage(content=request.message)]}
 
+    chat = session.get(ChatSession, request.thread_id)
+    chat.last_message_time = datetime.now()
+    session.add(chat)
+    session.commit()
+
     async def event_generator():
-        async for event in agent.astream_events(new_input, config=config, version="v2"):
+        name_sent = False
+
+        async for event in get_agent().astream_events(new_input, config=config, version="v2"):
+            if not name_sent:
+                if chat and chat.name != "New Chat":
+                    yield f"data: {json.dumps({'type': 'chat_name_update', 'data': chat.name})}\n\n"
+                    name_sent = True
+
             if event["event"] == "on_chat_model_stream" and event["metadata"].get("langgraph_node") == "synthesizer_node":
                 chunk = event["data"]["chunk"].content
                 if chunk:
-                    yield f"data: {json.dumps({'text': chunk})}\n\n"
+                    yield f"data: {json.dumps({'type': 'text', 'data': chunk})}\n\n"
 
-                elif event["event"] == "on_tool_start":
-                    yield f"data: {json.dumps({'status': 'Running database query...'})}\n\n"
+            elif event["event"] == "on_custom_event":
+                if event["name"] == "render_canvas_table":
+                    canvas_payload = event["data"]
+                    yield f"data: {json.dumps({'type': 'canvas_table', 'data': canvas_payload})}\n\n"
 
-            yield "data: [DONE]\n\n"
+                elif event["name"] == "status":
+                    yield f"data: {json.dumps({'type': 'status', 'data': event['data']['status']})}\n\n"
+
+        yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/get-chat-sessions")
+@require_project
+def get_chat_sessions(session: SessionDep):
+    project = session.exec(select(Project).where(Project.name == selected_project)).first()
+    if not project:
+        return JSONResponse([], status_code=200)
+    chats = session.exec(
+        select(ChatSession)
+        .where(ChatSession.project_id == project.id)
+        .order_by(ChatSession.last_message_time.desc())
+    ).all()
+    return JSONResponse([{"id": c.id, "name": c.name, "last_message_at": c.last_message_time.isoformat()} for c in chats])
+
+@app.get("/get-chat-messages/{thread_id}")
+@require_project
+async def get_chat_messages(thread_id: str):
+    """Read message history directly from LangGraph's checkpointer — no duplicate storage."""
+    config = {"configurable": {"thread_id": thread_id, "conn": conn}}
+    try:
+        state = await get_agent().aget_state(config)
+        messages = state.values.get("messages", [])
+    except Exception:
+        return JSONResponse([])
+
+    result = []
+    for m in messages:
+        if isinstance(m, HumanMessage):
+            content = m.content if isinstance(m.content, str) else str(m.content)
+            result.append({"role": "user", "content": content})
+        elif isinstance(m, AIMessage):
+            content = m.content if isinstance(m.content, str) else ""
+            if content:
+                result.append({"role": "assistant", "content": content})
+        elif isinstance(m, CanvasMessage):
+            result.append({"role": "canvas", "sql_query": m.sql_data.sql_query, "sql_params": [var.model_dump_json() for var in m.sql_data.sql_params]})
+    return JSONResponse(result)
+
+class ExecuteCanvasQueryRequest(BaseModel):
+    sql_query: str
+    sql_params: list[dict]
+
+@app.post("/execute-canvas-query")
+@require_project
+def execute_canvas_query(request: ExecuteCanvasQueryRequest):
+    global conn
+    params = {p["name"]: p["default"] for p in request.sql_params} if request.sql_params else {}
+    df = conn.execute(request.sql_query, params).df()
+    results = json.loads(df.to_json(orient='records'))
+    return JSONResponse({"results": results})
+
+@app.post("/delete-chat-session/{thread_id}")
+@require_project
+def delete_chat_session(thread_id: str, session: SessionDep):
+    chat = session.get(ChatSession, thread_id)
+    if chat:
+        session.delete(chat)
+        session.commit()
+    config = {"configurable": {"thread_id": thread_id, "conn": conn}}
+    try:
+        get_agent().delete_state(config)
+    except Exception:
+        pass
+    return JSONResponse({"message": "Chat session deleted"})
+
+@app.post("/rename-chat-session/{thread_id}")
+@require_project
+def rename_chat_session(thread_id: str, new_name: str, session: SessionDep):
+    chat = session.get(ChatSession, thread_id)
+    if chat:
+        chat.name = new_name
+        session.add(chat)
+        session.commit()
+        return JSONResponse({"message": "Chat session renamed"})
+    else:
+        return JSONResponse({"error": "Chat session not found"}, status_code=404)

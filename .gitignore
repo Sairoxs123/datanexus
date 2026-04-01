@@ -30,7 +30,6 @@ __pycache__
 .pnpm-store
 *.wal
 app_config.json
-database.db
-backend/database.db
+*.db*
 projects/
 **/projects/

@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   BarChart3,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 import Dashboard from "./dashboard/Dashboard";
 import GraphBuilder from "./dashboard/GraphBuilder";
@@ -18,6 +19,8 @@ import GraphWidgetRenderer, {
   type GraphLayout,
   type WidgetCardData,
 } from "./dashboard/GraphWidgetRenderer";
+import AIChatPanel from "./dashboard/AIChatPanel";
+import AICanvas, { type CanvasData } from "./dashboard/AICanvas";
 import api from "../utils/api";
 
 interface ProjectHomeProps {
@@ -71,6 +74,8 @@ export default function ProjectHome({
   const [selectedGraphLayout, setSelectedGraphLayout] = useState<GraphLayout | null>(null);
   const [deletingWidgetId, setDeletingWidgetId] = useState<string | null>(null);
   const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
 
   useEffect(() => {
     if (view !== "home") {
@@ -299,92 +304,124 @@ export default function ProjectHome({
               <BarChart3 className="w-4 h-4" />
               New Chart
             </button>
+            <button
+              onClick={() => setAiPanelOpen((o) => !o)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm ${
+                aiPanelOpen
+                  ? "bg-primary text-white hover:bg-primary/90"
+                  : "bg-surface border border-outline-variant text-on-surface hover:bg-surface-container-highest"
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              AI Assistant
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Content Canvas */}
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-7xl mx-auto">
+      {/* Content area: main canvas + optional AI panel */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        <main className="flex-1 min-w-0 min-h-0 overflow-hidden">
+          {canvasData ? (
+            <AICanvas
+              data={canvasData}
+              onClose={() => setCanvasData(null)}
+              onAddToDashboard={() => { /* placeholder – backend to be wired later */ }}
+            />
+          ) : (
+            <div className="h-full overflow-y-auto p-8">
+              <div className="max-w-7xl mx-auto">
 
-          {loadingLayout && (
-            <div className="bg-surface rounded-xl border border-outline-variant p-20 flex flex-col items-center justify-center text-center shadow-sm">
-              <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
-              <p className="text-sm font-medium text-on-surface-variant">Loading dashboard...</p>
-            </div>
-          )}
+                {loadingLayout && (
+                  <div className="bg-surface rounded-xl border border-outline-variant p-20 flex flex-col items-center justify-center text-center shadow-sm">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
+                    <p className="text-sm font-medium text-on-surface-variant">Loading dashboard...</p>
+                  </div>
+                )}
 
-          {!loadingLayout && layoutError && (
-            <div className="bg-error/10 border border-error/20 rounded-xl p-8 flex items-start gap-3 text-error shadow-sm">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <div>
-                <h3 className="text-sm font-semibold mb-1">Failed to load dashboard</h3>
-                <p className="text-sm opacity-90">{layoutError}</p>
-              </div>
-            </div>
-          )}
-
-          {!loadingLayout && !layoutError && widgets.length === 0 && (
-            <div className="bg-surface rounded-xl border border-outline-variant border-dashed p-16 flex flex-col items-center justify-center text-center shadow-sm">
-              <div className="w-16 h-16 rounded-2xl bg-surface-container-highest flex items-center justify-center mb-5">
-                <LayoutDashboard className="w-8 h-8 text-outline" />
-              </div>
-              <h3 className="text-xl font-semibold text-on-surface mb-2">No Charts Found</h3>
-              <p className="text-sm text-on-surface-variant max-w-sm mx-auto">
-                Create your first chart to start visualizing your data on this dashboard.
-              </p>
-              <button
-                onClick={() => setView("graph-builder")}
-                className="mt-6 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm">
-                Create First Chart <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {!loadingLayout && !layoutError && widgets.length > 0 && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {widgets.map((widget, i) => (
-                <article
-                  key={widget.layout.id}
-                  className="fade-up bg-surface rounded-xl border border-outline-variant p-6 h-full flex flex-col shadow-sm hover:border-primary/30 hover:shadow-md transition-all cursor-pointer group"
-                  style={{ animationDelay: `${i * 50}ms` }}
-                  onClick={() => handleGraphClick(widget.layout)}
-                >
-                  <div className="flex items-start justify-between gap-4 mb-6">
-                    <div className="flex-1">
-                      <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1">{widget.layout.graph_type} Chart</div>
-                      <h3 className="text-lg font-semibold text-on-surface group-hover:text-primary transition-colors">{widget.layout.title}</h3>
+                {!loadingLayout && layoutError && (
+                  <div className="bg-error/10 border border-error/20 rounded-xl p-8 flex items-start gap-3 text-error shadow-sm">
+                    <AlertCircle className="w-5 h-5 shrink-0" />
+                    <div>
+                      <h3 className="text-sm font-semibold mb-1">Failed to load dashboard</h3>
+                      <p className="text-sm opacity-90">{layoutError}</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <BarChart3 className="w-5 h-5 text-primary" />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteClick(widget.layout.id, e)}
-                        disabled={deletingWidgetId === widget.layout.id}
-                        className="opacity-0 group-hover:opacity-100 transition-all p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Delete widget"
+                  </div>
+                )}
+
+                {!loadingLayout && !layoutError && widgets.length === 0 && (
+                  <div className="bg-surface rounded-xl border border-outline-variant border-dashed p-16 flex flex-col items-center justify-center text-center shadow-sm">
+                    <div className="w-16 h-16 rounded-2xl bg-surface-container-highest flex items-center justify-center mb-5">
+                      <LayoutDashboard className="w-8 h-8 text-outline" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-on-surface mb-2">No Charts Found</h3>
+                    <p className="text-sm text-on-surface-variant max-w-sm mx-auto">
+                      Create your first chart to start visualizing your data on this dashboard.
+                    </p>
+                    <button
+                      onClick={() => setView("graph-builder")}
+                      className="mt-6 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm">
+                      Create First Chart <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                {!loadingLayout && !layoutError && widgets.length > 0 && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {widgets.map((widget, i) => (
+                      <article
+                        key={widget.layout.id}
+                        className="fade-up bg-surface rounded-xl border border-outline-variant p-6 h-full flex flex-col shadow-sm hover:border-primary/30 hover:shadow-md transition-all cursor-pointer group"
+                        style={{ animationDelay: `${i * 50}ms` }}
+                        onClick={() => handleGraphClick(widget.layout)}
                       >
-                        {deletingWidgetId === widget.layout.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
+                        <div className="flex items-start justify-between gap-4 mb-6">
+                          <div className="flex-1">
+                            <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1">{widget.layout.graph_type} Chart</div>
+                            <h3 className="text-lg font-semibold text-on-surface group-hover:text-primary transition-colors">{widget.layout.title}</h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <BarChart3 className="w-5 h-5 text-primary" />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteClick(widget.layout.id, e)}
+                              disabled={deletingWidgetId === widget.layout.id}
+                              className="opacity-0 group-hover:opacity-100 transition-all p-2 rounded-lg bg-error/10 text-error hover:bg-error/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Delete widget"
+                            >
+                              {deletingWidgetId === widget.layout.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-h-[300px] relative">
+                          <div className="absolute inset-0">
+                            <GraphWidgetRenderer widget={widget} height="h-full" />
+                          </div>
+                        </div>
+                      </article>
+                    ))}
                   </div>
-                  <div className="flex-1 min-h-[300px] relative">
-                    <div className="absolute inset-0">
-                      <GraphWidgetRenderer widget={widget} height="h-full" />
-                    </div>
-                  </div>
-                </article>
-              ))}
+                )}
+              </div>
             </div>
           )}
-        </div>
-      </main>
+        </main>
+
+        {/* AI panel */}
+        {aiPanelOpen && (
+          <AIChatPanel
+            isOpen={aiPanelOpen}
+            onClose={() => setAiPanelOpen(false)}
+            onCanvasData={(data) => setCanvasData(data)}
+          />
+        )}
+      </div>
 
       {/* Delete Confirmation Modal */}
       {widgetToDelete && (
