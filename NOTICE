@@ -1,0 +1,27 @@
+DataNexus
+Copyright 2026 Sai Teja Sagiraju
+
+This product includes software developed by Sai Teja Sagiraju
+(https://github.com/Sairoxs123/datanexus).
+
+=========================================================================
+ATTRIBUTION REQUIREMENTS
+=========================================================================
+If you use, modify, or distribute this software (or any significant 
+portion of its architecture, including the LangGraph agent implementations 
+or the React-to-DuckDB Canvas pipeline) as part of a commercial product, 
+open-source project, or SaaS platform, you must explicitly include this 
+NOTICE file and credit the original author.
+
+Third-Party Dependencies:
+This software relies on several open-source libraries and runtimes, 
+including but not limited to:
+- Tauri (MIT / Apache 2.0)
+- React (MIT)
+- Python (PSF License)
+- LangGraph & LangChain (MIT)
+- DuckDB (MIT)
+- FastAPI (MIT)
+
+For full license details of third-party software, please refer to their 
+respective repositories.
