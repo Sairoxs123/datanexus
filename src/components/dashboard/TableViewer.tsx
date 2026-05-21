@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, Loader2, AlertCircle, Basecards, Table2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, AlertCircle, Table2 } from "lucide-react";
 import api from "../../utils/api";
 import VirtualDataTable from "./VirtualDataTable";
 
@@ -105,7 +105,7 @@ export default function TableViewer({ tableName }: TableViewerProps) {
       <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant shrink-0 bg-white">
         <div className="flex items-center gap-4">
           <h2 className="text-lg font-bold text-on-surface truncate pr-2 border-r border-outline-variant">{tableName}</h2>
-          
+
           {rowCount > 0 && (
             <span className="text-sm font-medium text-on-surface-variant">
               {rowCount.toLocaleString()} rows
@@ -139,7 +139,7 @@ export default function TableViewer({ tableName }: TableViewerProps) {
              <span className="text-sm font-medium text-on-surface pr-1">
                {currentPage} of {totalPages}
              </span>
-             
+
              <div className="flex gap-1">
                 <button
                   onClick={handlePrev}

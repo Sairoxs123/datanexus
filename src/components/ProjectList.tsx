@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, FolderOpen, Calendar, Database, ArrowRight, LayoutDashboard } from "lucide-react";
+import { Plus, FolderOpen, Calendar, ArrowRight, LayoutDashboard } from "lucide-react";
 
 interface Project {
   id: number;
@@ -65,7 +65,7 @@ export default function ProjectList({ projects, onSelectProject, onNewProject }:
                 <button key={project.id} onClick={() => handleSelect(project)} disabled={loadingId !== null}
                   className="fade-up group text-left bg-surface-container rounded-xl border border-outline-variant p-5 hover:border-primary/50 hover:shadow-md transition-all duration-200 disabled:opacity-50 flex flex-col h-full"
                   style={{ animationDelay: `${i * 50}ms` }}>
-                  
+
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-on-surface-variant group-hover:text-primary transition-colors">
                       <FolderOpen className="w-5 h-5" />
@@ -85,7 +85,7 @@ export default function ProjectList({ projects, onSelectProject, onNewProject }:
                   <h3 className="text-base font-semibold text-on-surface mb-1 truncate">
                     {project.name}
                   </h3>
-                  
+
                   <div className="mt-auto pt-4 flex items-center justify-between text-xs text-on-surface-variant">
                     <div className="flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5" />

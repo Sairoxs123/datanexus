@@ -20,7 +20,7 @@ import GraphWidgetRenderer, {
   type WidgetCardData,
 } from "./dashboard/GraphWidgetRenderer";
 import AIChatPanel from "./dashboard/AIChatPanel";
-import AICanvas, { type CanvasData } from "./dashboard/AICanvas";
+import AICanvas, { type CanvasChartSeed, type CanvasData } from "./dashboard/AICanvas";
 import api from "../utils/api";
 
 interface ProjectHomeProps {
@@ -76,6 +76,7 @@ export default function ProjectHome({
   const [widgetToDelete, setWidgetToDelete] = useState<string | null>(null);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
+  const [graphBuilderSeed, setGraphBuilderSeed] = useState<CanvasChartSeed | null>(null);
 
   useEffect(() => {
     if (view !== "home") {
@@ -233,6 +234,18 @@ export default function ProjectHome({
     setWidgetToDelete(null);
   };
 
+  const openGraphBuilderWithSeed = (seed: CanvasChartSeed) => {
+    setGraphBuilderSeed(seed);
+    setCanvasData(null);
+    setAiPanelOpen(false);
+    setView("graph-builder");
+  };
+
+  const handleBackToHome = () => {
+    setGraphBuilderSeed(null);
+    setView("home");
+  };
+
   const handleWidgetDeleted = () => {
     // This will be called when a widget is deleted from the detail view
     // Refresh the widgets list by triggering the useEffect
@@ -251,7 +264,14 @@ export default function ProjectHome({
   }
 
   if (view === "graph-builder") {
-    return <GraphBuilder onBack={() => setView("home")} />;
+    return (
+      <GraphBuilder
+        onBack={handleBackToHome}
+        initialQuery={graphBuilderSeed?.sql_query}
+        initialSqlParams={graphBuilderSeed?.sql_params}
+        initialWidgetName={graphBuilderSeed ? "AI Chat Chart" : undefined}
+      />
+    );
   }
 
   if (view === "graph-detail" && selectedGraphLayout) {
@@ -326,7 +346,7 @@ export default function ProjectHome({
             <AICanvas
               data={canvasData}
               onClose={() => setCanvasData(null)}
-              onAddToDashboard={() => { /* placeholder – backend to be wired later */ }}
+              onAddToDashboard={openGraphBuilderWithSeed}
             />
           ) : (
             <div className="h-full overflow-y-auto p-8">
@@ -399,7 +419,7 @@ export default function ProjectHome({
                             </button>
                           </div>
                         </div>
-                        <div className="flex-1 min-h-[300px] relative">
+                        <div className="flex-1 min-h-75 relative">
                           <div className="absolute inset-0">
                             <GraphWidgetRenderer widget={widget} height="h-full" />
                           </div>
@@ -419,6 +439,7 @@ export default function ProjectHome({
             isOpen={aiPanelOpen}
             onClose={() => setAiPanelOpen(false)}
             onCanvasData={(data) => setCanvasData(data)}
+            onAddCanvasToDashboard={openGraphBuilderWithSeed}
           />
         )}
       </div>

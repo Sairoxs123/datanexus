@@ -78,23 +78,23 @@ def sql_agent(state: AppState, config: RunnableConfig):
 
     schema = config["configurable"].get("table_schema", "No schema provided")
 
-    prompt = f"""
-    You are an expert DuckDB SQL Developer.
+    system_prompt = SystemMessage(content=f"""
+        You are an expert DuckDB SQL Developer.
 
-    CURRENT TABLE SCHEMA:
-    {schema}
+        CURRENT TABLE SCHEMA:
+        {schema}
 
-    USER QUESTION: {state["messages"][-1].content}
+        CRITICAL RULES for Parameterization:
+        1. YOU MUST EXTRACT ALL literal values (numbers, strings, dates) into variables using the $variable_name syntax.
+        2. ABSOLUTELY DO NOT HARDCODE ANY VALUES in your WHERE clauses or similar conditions. For example, use $start_date and $end_date instead of '2025-01-01' or '2025-03-31'.
+        3. Never wrap a variable in quotes or conversion functions like TIMESTAMP(), CAST(), or DATE(). Write comparisons directly: tpep_pickup_datetime BETWEEN $start_date AND $end_date.
+        4. Populate the 'sql_params' array with EVERY variable you used and set its exact required value in the "default" field.
 
-    CRITICAL RULES:
-    1. Only use columns present in the schema above.
-    2. Use $variable_name syntax for all values.
-    3. Never wrap a variable in TIMESTAMP(), CAST(), DATE(), quotes, or any other SQL function. Write comparisons directly, for example: tpep_pickup_datetime BETWEEN $start_date AND $end_date.
-    4. The sql_params defaults must be plain ISO 8601 strings for date or timestamp values.
-    5. Return a GeneratedQuery object with 'sql_query' and 'sql_params'.
-    """
+        Return a GeneratedQuery object containing 'sql_query' and 'sql_params'.
+    """)
+    human_prompt = HumanMessage(content=state["messages"][-1].content)
 
-    result = sql_generator_llm.invoke(prompt)
+    result = sql_generator_llm.invoke([system_prompt, human_prompt])
     logger.info(
         "sql_agent: generated SQL | sql_preview='%s' | param_keys=%s | defaults=%s",
         _preview_text(result.sql_query),

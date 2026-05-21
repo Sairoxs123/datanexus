@@ -33,3 +33,10 @@ app_config.json
 *.db*
 projects/
 **/projects/
+
+# PyInstaller build artifacts
+backend/dist/
+backend/build/
+
+# Tauri sidecar binaries
+src-tauri/bin/

@@ -9,8 +9,6 @@ def get_safe_thread_count():
     return safe_threads
 
 def _make_llm(temperature: float, **kwargs):
-    """Returns a ChatOllama with Qwen 3 thinking disabled.
-    `think` must be a root-level Ollama API body param, not an option."""
     return ChatOllama(
         model="gemma3:4b",
         temperature=temperature,

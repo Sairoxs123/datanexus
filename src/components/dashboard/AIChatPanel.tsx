@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X, Plus, ChevronLeft, Send, Loader2, MessageSquare,
-  Sparkles, Database, Table2, ChevronDown, ChevronUp, Pencil, Trash2,
+  Sparkles, Database, Table2, ChevronDown, ChevronUp, Pencil, Trash2, LayoutDashboard,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import api from "../../utils/api";
-import type { CanvasData } from "./AICanvas";
+import type { CanvasChartSeed, CanvasData } from "./AICanvas";
 
 const API_BASE = "http://localhost:8000";
 
@@ -26,7 +26,7 @@ interface Message {
   content?: string;
   sql_query?: string;
   sql_params?: any[];
-  canvas_data?: Record<string, unknown>;
+  canvas_data?: CanvasData;
   isStreaming?: boolean;
 }
 
@@ -34,6 +34,7 @@ interface AIChatPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onCanvasData: (data: CanvasData) => void;
+  onAddCanvasToDashboard: (seed: CanvasChartSeed) => void;
 }
 
 type PanelView = "threads" | "chat";
@@ -55,9 +56,11 @@ function formatThreadDate(thread: Thread) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function AIChatPanel({ isOpen, onClose, onCanvasData }: AIChatPanelProps) {
+export default function AIChatPanel(props: AIChatPanelProps) {
   const MIN_PANEL_WIDTH = 320;
   const MAX_PANEL_WIDTH = 700;
+
+  const { isOpen, onClose, onCanvasData } = props;
 
   const [panelView, setPanelView] = useState<PanelView>("threads");
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -209,11 +212,22 @@ export default function AIChatPanel({ isOpen, onClose, onCanvasData }: AIChatPan
                 : (payload.rows ?? []);
               const columns: string[] = payload.columns ??
                 (rows.length > 0 ? Object.keys(rows[0]) : []);
-              onCanvasData({ rows, columns });
+              onCanvasData({
+                rows,
+                columns,
+                sql_query: payload.sql_query,
+                sql_params: payload.sql_params,
+              });
 
               setMessages((prev) => [
                 ...prev,
-                { id: `live-${Date.now()}`, role: "canvas", sql_query: payload.sql_query, sql_params: payload.sql_params, canvas_data: { rows, columns } },
+                {
+                  id: `live-${Date.now()}`,
+                  role: "canvas",
+                  sql_query: payload.sql_query,
+                  sql_params: payload.sql_params,
+                  canvas_data: { rows, columns, sql_query: payload.sql_query, sql_params: payload.sql_params },
+                },
               ]);
             } else if (ev.type === "chat_name_update") {
               setThreads((prev) =>
@@ -340,7 +354,12 @@ export default function AIChatPanel({ isOpen, onClose, onCanvasData }: AIChatPan
       const columns: string[] =
         (payload as { columns?: string[] }).columns ??
         (rows.length > 0 ? Object.keys(rows[0]) : []);
-      onCanvasData({ rows, columns });
+      onCanvasData({
+        rows,
+        columns,
+        sql_query: msg.sql_query ?? (payload as { sql_query?: string }).sql_query,
+        sql_params: msg.sql_params ?? (payload as { sql_params?: any[] }).sql_params,
+      });
       return;
     }
 
@@ -353,7 +372,7 @@ export default function AIChatPanel({ isOpen, onClose, onCanvasData }: AIChatPan
         });
         const rows = res.data.results || [];
         const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
-        onCanvasData({ rows, columns });
+        onCanvasData({ rows, columns, sql_query: msg.sql_query, sql_params: msg.sql_params });
       } catch (err) {
         console.error("Failed to execute canvas query:", err);
       } finally {
@@ -473,6 +492,7 @@ export default function AIChatPanel({ isOpen, onClose, onCanvasData }: AIChatPan
           onKeyDown={handleKeyDown}
           onSend={handleSend}
           onViewSnapshot={viewSnapshot}
+          onAddCanvasToDashboard={props.onAddCanvasToDashboard}
         />
       )}
 
@@ -622,7 +642,7 @@ function ThreadList({
 function ChatView({
   messages, loading, isStreaming, statusText, loadingCanvas,
   inputValue, inputRef, messagesEndRef,
-  onInputChange, onKeyDown, onSend, onViewSnapshot,
+  onInputChange, onKeyDown, onSend, onViewSnapshot, onAddCanvasToDashboard,
 }: {
   messages: Message[];
   loading: boolean;
@@ -636,6 +656,7 @@ function ChatView({
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
   onViewSnapshot: (msg: Message) => void;
+  onAddCanvasToDashboard: (seed: CanvasChartSeed) => void;
 }) {
   return (
     <>
@@ -653,7 +674,29 @@ function ChatView({
             <p className="text-xs text-on-surface-variant">Ask questions about your data, generate SQL, or explore trends.</p>
           </div>
         ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} message={msg} loadingCanvas={loadingCanvas[msg.id]} onViewCanvas={() => onViewSnapshot(msg)} />)
+          messages.map((msg) => {
+            const handleAddToDashboard = () => {
+              const sqlQuery = msg.sql_query ?? msg.canvas_data?.sql_query;
+              if (!sqlQuery) {
+                return;
+              }
+
+              onAddCanvasToDashboard({
+                sql_query: sqlQuery,
+                sql_params: msg.sql_params ?? msg.canvas_data?.sql_params,
+              });
+            };
+
+            return (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                loadingCanvas={loadingCanvas[msg.id]}
+                onViewCanvas={() => onViewSnapshot(msg)}
+                onAddToDashboard={handleAddToDashboard}
+              />
+            );
+          })
         )}
 
         {statusText && (
@@ -700,7 +743,17 @@ function ChatView({
 
 // ─── Message bubble ────────────────────────────────────────────────────────────
 
-function MessageBubble({ message, loadingCanvas, onViewCanvas }: { message: Message; loadingCanvas?: boolean; onViewCanvas?: () => void }) {
+function MessageBubble({
+  message,
+  loadingCanvas,
+  onViewCanvas,
+  onAddToDashboard,
+}: {
+  message: Message;
+  loadingCanvas?: boolean;
+  onViewCanvas?: () => void;
+  onAddToDashboard?: () => void;
+}) {
   const [sqlExpanded, setSqlExpanded] = useState(false);
 
   const displayContent = message.content ? message.content.replace(/```sql[\s\S]*?```/gi, "").trim() : "";
@@ -709,7 +762,7 @@ function MessageBubble({ message, loadingCanvas, onViewCanvas }: { message: Mess
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-tr-sm bg-primary text-white text-sm leading-relaxed break-words">
+        <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-tr-sm bg-primary text-white text-sm leading-relaxed wrap-break-word">
           {message.content}
         </div>
       </div>
@@ -749,13 +802,22 @@ function MessageBubble({ message, loadingCanvas, onViewCanvas }: { message: Mess
                  {payload ? (
                    <span className="block text-[10px] text-on-surface-variant font-normal mt-0.5">{rowsCount.toLocaleString()} rows · {colsCount} columns</span>
                  ) : (
-                   <span className="block text-[10px] text-on-surface-variant font-normal mt-0.5 truncate max-w-[200px]">{message.sql_query}</span>
+                   <span className="block text-[10px] text-on-surface-variant font-normal mt-0.5 truncate max-w-50">{message.sql_query}</span>
                  )}
                </div>
             </div>
             <div className="shrink-0 text-primary">
                {loadingCanvas ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronLeft className="w-4 h-4 rotate-180 group-hover:translate-x-0.5 transition-transform" />}
             </div>
+          </button>
+
+          <button
+            onClick={onAddToDashboard}
+            disabled={!onAddToDashboard || !message.sql_query}
+            className="mt-3 flex items-center justify-center gap-2 w-full px-3 py-2 rounded-xl border border-primary/20 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            Add as Chart
           </button>
         </div>
       </div>
@@ -809,7 +871,7 @@ function MessageBubble({ message, loadingCanvas, onViewCanvas }: { message: Mess
             {displayContent || message.content || ""}
           </ReactMarkdown>
           {message.isStreaming && (
-            <span className="inline-block w-1.5 h-[15px] bg-primary/70 ml-0.5 rounded-sm cursor-blink align-middle" />
+            <span className="inline-block w-1.5 h-3.75 bg-primary/70 ml-0.5 rounded-sm cursor-blink align-middle" />
           )}
         </div>
 

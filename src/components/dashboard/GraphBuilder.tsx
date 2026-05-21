@@ -3,7 +3,6 @@ import {
   Play,
   Loader2,
   AlertCircle,
-  ChevronRight,
   ChevronLeft,
   Variable,
   BarChart3,
@@ -39,14 +38,89 @@ const CHART_TYPES: { type: ChartType; label: string; icon: typeof BarChart3 }[] 
 
 const VAR_TYPES = ["text", "number", "date", "datetime"];
 
-interface GraphBuilderProps {
-  onBack: () => void;
+type SeedSqlParams =
+  | Record<string, unknown>
+  | Array<{
+      name: string;
+      default: unknown;
+      type?: string;
+      description?: string;
+    }>;
+
+function getQueryVariables(query: string) {
+  const regex = /\$(\w+)/g;
+  const matches = new Set<string>();
+  let match;
+
+  while ((match = regex.exec(query)) !== null) {
+    matches.add(match[1]);
+  }
+
+  return Array.from(matches);
 }
 
-export default function GraphBuilder({ onBack }: GraphBuilderProps) {
+function buildSeedVariables(query: string, sqlParams?: SeedSqlParams) {
+  const seedMap = new Map<string, ExtractedVariable>();
+  const providedNames = new Set<string>();
+
+  if (Array.isArray(sqlParams)) {
+    for (const param of sqlParams) {
+      providedNames.add(param.name);
+      seedMap.set(param.name, {
+        name: param.name,
+        type: param.type ?? "text",
+        default: param.default == null ? "" : String(param.default),
+      });
+    }
+  } else if (sqlParams && typeof sqlParams === "object") {
+    for (const [name, value] of Object.entries(sqlParams)) {
+      providedNames.add(name);
+      seedMap.set(name, {
+        name,
+        type: "text",
+        default: value == null ? "" : String(value),
+      });
+    }
+  }
+
+  return {
+    variables: getQueryVariables(query).map((name) =>
+      seedMap.get(name) ?? { name, type: "text", default: "" }
+    ),
+    providedNames,
+  };
+}
+
+function deriveWidgetName(query: string) {
+  const normalized = query.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "AI Chat Chart";
+  }
+
+  const match = normalized.match(/^select\s+(.{0,48})/i);
+  if (match?.[1]) {
+    return `AI Chart - ${match[1].trim().replace(/,$/, "")}`;
+  }
+
+  return "AI Chat Chart";
+}
+
+interface GraphBuilderProps {
+  onBack: () => void;
+  initialQuery?: string;
+  initialSqlParams?: SeedSqlParams;
+  initialWidgetName?: string;
+}
+
+export default function GraphBuilder({
+  onBack,
+  initialQuery,
+  initialSqlParams,
+  initialWidgetName,
+}: GraphBuilderProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [query, setQuery] = useState("");
-  const [cleanedQuery, setCleanedQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery?.trim() ?? "");
+  const [cleanedQuery, setCleanedQuery] = useState(initialQuery?.trim().replace(/;+\s*$/, "") ?? "");
   const [variables, setVariables] = useState<ExtractedVariable[]>([]);
   const [schema, setSchema] = useState<ColumnSchema[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,13 +129,14 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
   const [rowLimitWarning, setRowLimitWarning] = useState<string | null>(null);
 
   // Chart config
-  const [widgetName, setWidgetName] = useState("");
+  const [widgetName, setWidgetName] = useState(initialWidgetName?.trim() || (initialQuery ? deriveWidgetName(initialQuery) : ""));
   const [xAxis, setXAxis] = useState("");
   const [yAxis, setYAxis] = useState("");
   const [chartType, setChartType] = useState<ChartType>("bar");
   const [aggType, setAggType] = useState("COUNT");
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const initialQueryHydratedRef = useRef(false);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -150,6 +225,34 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialQueryHydratedRef.current || !initialQuery?.trim()) {
+      return;
+    }
+
+    initialQueryHydratedRef.current = true;
+
+    const cleaned = initialQuery.trim().replace(/;+\s*$/, "");
+    const { variables: seededVariables, providedNames } = buildSeedVariables(cleaned, initialSqlParams);
+    const queryVariables = getQueryVariables(cleaned);
+    const canAutoValidate = queryVariables.length === 0 || queryVariables.every((name) => providedNames.has(name));
+
+    setQuery(cleaned);
+    setCleanedQuery(cleaned);
+    setWidgetName(initialWidgetName?.trim() || deriveWidgetName(cleaned));
+
+    if (seededVariables.length > 0) {
+      setVariables(seededVariables);
+    }
+
+    if (!canAutoValidate) {
+      setStep(2);
+      return;
+    }
+
+    void fetchSchema(seededVariables, cleaned);
+  }, [initialQuery, initialSqlParams, initialWidgetName]);
 
   const handleContinueFromVariables = () => {
     const cleaned = cleanedQuery || query.trim().replace(/;+\s*$/, "");
@@ -247,7 +350,9 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
 
   const handleCreateWidget = async () => {
     if (!xAxis || !yAxis) return;
-    if (!widgetName.trim()) {
+    const resolvedWidgetName = widgetName.trim() || (initialQuery?.trim() ? deriveWidgetName(cleanedQuery || query) : "");
+
+    if (!resolvedWidgetName) {
       setError("Please provide a name for the chart.");
       return;
     }
@@ -257,7 +362,7 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
 
     try {
       const graphLayout = {
-        title: widgetName.trim(),
+        title: resolvedWidgetName,
         graph_type: chartType,
         base_sql: cleanedQuery,
         config: {
@@ -343,7 +448,7 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-4xl mx-auto">
-          
+
           {/* STEP 1: Query */}
           {step === 1 && (
             <div className="bg-surface rounded-xl border border-outline-variant p-8 shadow-sm fade-up">
@@ -356,7 +461,7 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
                    <p className="text-sm font-medium text-on-surface-variant">Write a SQL query to fetch data for your chart</p>
                 </div>
               </div>
-                 
+
               <div className="mb-6">
                  <textarea
                    ref={textareaRef}
@@ -423,7 +528,7 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
                          ${v.name}
                        </span>
                      </div>
-                     
+
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        <div>
                          <label className="block text-sm font-medium text-on-surface-variant mb-2">Data Type</label>
@@ -475,7 +580,7 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
           {/* STEP 3: Chart Configuration */}
           {step === 3 && (
             <div className="space-y-6 fade-up">
-              
+
               {/* Schema Map */}
               <div className="bg-surface rounded-xl border border-outline-variant p-8 shadow-sm">
                  <div className="flex items-center gap-3 mb-6">
@@ -487,7 +592,7 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
                        <p className="text-sm font-medium text-on-surface-variant">The query returned {schema.length} columns and {rowCount?.toLocaleString()} rows.</p>
                     </div>
                  </div>
-                 
+
                  <div className="rounded-lg border border-outline-variant overflow-hidden">
                    <table className="w-full text-left text-sm">
                      <thead>
@@ -520,7 +625,7 @@ export default function GraphBuilder({ onBack }: GraphBuilderProps) {
                     </div>
                     <h3 className="text-lg font-bold text-on-surface">Configure Visualization</h3>
                  </div>
-                 
+
                  <div className="space-y-8">
                     <div>
                       <label className="block text-sm font-semibold text-on-surface mb-2">Widget Name</label>

@@ -1,9 +1,13 @@
+use std::process::Child;
+#[cfg(debug_assertions)]
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::Manager;
+#[cfg(not(debug_assertions))]
+use tauri_plugin_shell::ShellExt;
 
-// Store the backend process ID for cleanup
-struct BackendProcess(Mutex<Option<u32>>);
+// Store the backend process for cleanup
+struct BackendProcess(Mutex<Option<Child>>);
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -11,20 +15,14 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[cfg(debug_assertions)]
 #[cfg(windows)]
-fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
-    // Use 'cmd /C start' instead of direct spawning.
-    // This allows the OS to do the heavy lifting of window creation and stdio setup.
-    // While we lose the direct PID of python (we get cmd's PID),
-    // the window title trick in kill_backend works reliably for cleanup.
+fn spawn_backend(backend_path: &std::path::Path) -> Option<Child> {
+    // Development mode on Windows: spawn backend via command line
     let child = Command::new("cmd")
         .args([
             "/c",
-            "start",
-            "DataNexus Backend",
-            "cmd",
-            "/k",
-            "call .\\venv\\Scripts\\activate && python -m uvicorn main:app --reload",
+            ".\\venv\\Scripts\\activate && python -m uvicorn main:app --reload",
         ])
         .current_dir(backend_path)
         .spawn();
@@ -32,8 +30,8 @@ fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
     match child {
         Ok(process) => {
             let pid = process.id();
-            println!("Backend server started with PID: {}", pid);
-            Some(pid)
+            println!("Backend server started in dev mode with PID: {}", pid);
+            Some(process)
         }
         Err(e) => {
             eprintln!("Failed to start backend server: {}", e);
@@ -42,8 +40,10 @@ fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
     }
 }
 
+#[cfg(debug_assertions)]
 #[cfg(not(windows))]
-fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
+fn spawn_backend(backend_path: &std::path::Path) -> Option<Child> {
+    // Development mode on Unix: spawn backend via python
     let child = Command::new("python")
         .args(["-m", "uvicorn", "main:app", "--reload"])
         .current_dir(backend_path)
@@ -52,8 +52,8 @@ fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
     match child {
         Ok(process) => {
             let pid = process.id();
-            println!("Backend server started with PID: {}", pid);
-            Some(pid)
+            println!("Backend server started in dev mode with PID: {}", pid);
+            Some(process)
         }
         Err(e) => {
             eprintln!("Failed to start backend server: {}", e);
@@ -62,26 +62,37 @@ fn spawn_backend(backend_path: &std::path::Path) -> Option<u32> {
     }
 }
 
-#[cfg(windows)]
-fn kill_backend(_pid: u32) {
-    // Kill the backend window by its title.
-    // The PID we have is just the launcher CMD which might maintain a handle,
-    // but the actual window is a separate process.
-    let _ = Command::new("taskkill")
-        .args(["/F", "/FI", "WINDOWTITLE eq DataNexus Backend*"])
-        .output();
+#[cfg(not(debug_assertions))]
+fn spawn_backend_sidecar(app: &tauri::AppHandle) {
+    // Build/production mode: use sidecar pattern
+    match app.shell().sidecar("backend") {
+        Ok(sidecar_command) => {
+            match sidecar_command.spawn() {
+                Ok((mut _rx, _child)) => {
+                    println!("Backend sidecar started");
+                }
+                Err(e) => {
+                    eprintln!("Failed to spawn backend sidecar: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to create sidecar command: {}", e);
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+fn kill_backend(mut process: Child) {
+    // Development mode: kill the spawned process directly
+    let _ = process.kill();
     println!("Backend server stopped");
 }
 
-#[cfg(not(windows))]
-fn kill_backend(pid: u32) {
-    use std::process::Stdio;
-    // Kill process group on Unix
-    let _ = Command::new("kill")
-        .args(["-9", &format!("-{}", pid)])
-        .stderr(Stdio::null())
-        .output();
-    println!("Backend server stopped (PID: {})", pid);
+#[cfg(not(debug_assertions))]
+fn kill_backend(_process: Child) {
+    // Build/production mode: sidecar handles its own cleanup
+    println!("Backend sidecar stopped");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -89,6 +100,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(BackendProcess(Mutex::new(None)))
         .setup(|app| {
             // Get the path to the backend directory
@@ -112,10 +124,21 @@ pub fn run() {
             };
 
             println!("Starting backend from: {:?}", backend_path);
+            println!("Debug mode: {}", cfg!(debug_assertions));
 
-            if let Some(pid) = spawn_backend(&backend_path) {
-                let state = app.state::<BackendProcess>();
-                *state.0.lock().unwrap() = Some(pid);
+            #[cfg(debug_assertions)]
+            {
+                // Development mode: spawn using shell commands
+                if let Some(process) = spawn_backend(&backend_path) {
+                    let state = app.state::<BackendProcess>();
+                    *state.0.lock().unwrap() = Some(process);
+                }
+            }
+
+            #[cfg(not(debug_assertions))]
+            {
+                // Build mode: use sidecar pattern
+                spawn_backend_sidecar(&app.handle());
             }
 
             Ok(())
@@ -125,8 +148,8 @@ pub fn run() {
                 // Kill the backend process when the window is destroyed
                 let state: tauri::State<BackendProcess> = window.state();
                 let mut guard = state.0.lock().unwrap();
-                if let Some(pid) = guard.take() {
-                    kill_backend(pid);
+                if let Some(process) = guard.take() {
+                    kill_backend(process);
                 }
             }
         })

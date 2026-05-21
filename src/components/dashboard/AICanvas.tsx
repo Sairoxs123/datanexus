@@ -4,15 +4,33 @@ import VirtualDataTable from "./VirtualDataTable";
 export interface CanvasData {
   rows: Record<string, unknown>[];
   columns: string[];
+  sql_query?: string;
+  sql_params?: CanvasChartSeedParams;
 }
+
+export interface CanvasChartSeedVariable {
+  name: string;
+  default: unknown;
+  type?: string;
+  description?: string;
+}
+
+export interface CanvasChartSeed {
+  sql_query: string;
+  sql_params?: CanvasChartSeedParams;
+}
+
+export type CanvasChartSeedParams = Record<string, unknown> | CanvasChartSeedVariable[];
 
 interface AICanvasProps {
   data: CanvasData;
   onClose: () => void;
-  onAddToDashboard: () => void;
+  onAddToDashboard: (seed: CanvasChartSeed) => void;
 }
 
 export default function AICanvas({ data, onClose, onAddToDashboard }: AICanvasProps) {
+  const canAddToDashboard = Boolean(data.sql_query);
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-white fade-up">
       {/* Header */}
@@ -34,8 +52,12 @@ export default function AICanvas({ data, onClose, onAddToDashboard }: AICanvasPr
 
         <div className="flex items-center gap-2">
           <button
-            onClick={onAddToDashboard}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm"
+            onClick={() => {
+              if (!data.sql_query) return;
+              onAddToDashboard({ sql_query: data.sql_query, sql_params: data.sql_params });
+            }}
+            disabled={!canAddToDashboard}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
             Add to Dashboard

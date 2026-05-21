@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from ai_agent.utils import AppState, router_node, planner_node, sql_agent, executor_tool, analyst_node, synthesizer_node
+from paths import data_path
 import aiosqlite
 
 workflow = StateGraph(AppState)
@@ -25,7 +26,7 @@ db_conn = None
 
 async def init_agent():
     global agent, db_conn
-    db_conn = await aiosqlite.connect("agent_checkpoint.db")
+    db_conn = await aiosqlite.connect(data_path("agent_checkpoint.db"))
     serializer = JsonPlusSerializer()
     if isinstance(serializer._allowed_msgpack_modules, bool):
         serializer._allowed_msgpack_modules = set()

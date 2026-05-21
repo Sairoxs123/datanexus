@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import api from "../utils/api";
-import { Database, FolderOpen, Upload, ChevronRight } from "lucide-react";
+import { Database, Upload, ChevronRight } from "lucide-react";
 
 export default function LandingPage({ onProjectCreated }: { onProjectCreated?: () => void }) {
   const [projectName, setProjectName] = useState("");
@@ -54,7 +54,7 @@ export default function LandingPage({ onProjectCreated }: { onProjectCreated?: (
   return (
     <main className="min-h-screen bg-surface flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md flex flex-col gap-8 fade-up">
-        
+
         <div className="text-center flex flex-col items-center gap-4">
           <div className="w-16 h-16 rounded-xl bg-primary text-white flex items-center justify-center shadow-md">
             <Database className="w-8 h-8" />
@@ -82,7 +82,7 @@ export default function LandingPage({ onProjectCreated }: { onProjectCreated?: (
                   className="w-full px-4 py-2.5 rounded-lg bg-surface-container-lowest border border-outline text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
                 />
               </div>
-              
+
               {message && (
                 <div className={`text-sm p-3 rounded-md border ${messageType === "success" ? "bg-success/10 border-success/20 text-success" : "bg-error/10 border-error/20 text-error"}`}>
                   {message}

@@ -10,12 +10,17 @@
     "dev:backend": "cd backend && python -m uvicorn main:app --reload",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "cd backend && venv\\Scripts\\python.exe -m pytest",
+    "test:backend": "cd backend && venv\\Scripts\\python.exe -m pytest -v",
+    "test:quick": "cd backend && venv\\Scripts\\python.exe -m pytest -x -q",
+    "build:backend": "powershell -ExecutionPolicy Bypass -File backend/build_backend.ps1",
+    "build:all": "pnpm run build:backend && pnpm tauri build"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.19",
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "axios": "^1.13.5",
@@ -28,7 +33,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

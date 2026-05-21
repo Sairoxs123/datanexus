@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, BackgroundTasks
+from fastapi import FastAPI, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ import admin
 from functools import wraps
 import json
 import uuid
+import threading
 from fastapi.responses import StreamingResponse
 import pathlib
 import os
@@ -20,22 +21,41 @@ from langchain_core.messages import HumanMessage, AIMessage
 from ai_agent.utils import synthesizer_llm
 from ai_agent.utils.messages import CanvasMessage
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
+import time
+from paths import data_path, get_log_dir, get_projects_dir, DATA_DIR
+
+# ---------------------------------------------------------------------------
+# Logging — console + rotating file in the data directory
+# ---------------------------------------------------------------------------
+_log_file = os.path.join(get_log_dir(), "backend.log")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.StreamHandler(sys.stdout),
+        RotatingFileHandler(
+            _log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        ),
+    ],
 )
 
 logger = logging.getLogger(__name__)
+logger.info("Data directory: %s", DATA_DIR)
+logger.info("Log file:       %s", _log_file)
 
-sqlite_url = "sqlite:///database.db"
+
+def _truncate_log_value(value, limit: int = 1200):
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    return text if len(text) <= limit else f"{text[:limit]}... [truncated {len(text) - limit} chars]"
+
+sqlite_url = f"sqlite:///{data_path('database.db')}"
 connect_args = {"check_same_thread" : False}
 engine = create_engine(sqlite_url, connect_args=connect_args)
 
+db_lock = threading.Lock()
 selected_project = None
 
 class Project(SQLModel, table=True):
@@ -92,11 +112,12 @@ class ProjectDataHandler: # handles the JSON file for a project that stores dash
     def __init__(self, project_name: str):
         self.project_name = project_name
         self.folder_path = project_name.replace(' ', '_')
-        self.file_path = f"projects/{self.folder_path}/dashboard_layout.json"
+        self.project_dir = os.path.join(get_projects_dir(), self.folder_path)
+        self.file_path = os.path.join(self.project_dir, "dashboard_layout.json")
 
     def create_new_project_file(self):
         layout = ProjectDashboardLayout(project_name=self.project_name)
-        os.makedirs("projects/" + self.folder_path, exist_ok=True)
+        os.makedirs(self.project_dir, exist_ok=True)
         path = pathlib.Path(self.file_path)
         if not path.exists():
             with open(self.file_path, "w") as f:
@@ -104,14 +125,23 @@ class ProjectDataHandler: # handles the JSON file for a project that stores dash
 
     def load_layout(self) -> ProjectDashboardLayout:
         try:
+            logger.info("Loading dashboard layout from %s", self.file_path)
             with open(self.file_path, "r") as f:
                 data = json.load(f)
+                widgets = data.get("widgets") or []
+                logger.info(
+                    "Loaded dashboard layout for project '%s' with %d widget(s): %s",
+                    self.project_name,
+                    len(widgets),
+                    [getattr(widget, "get", lambda _k, _d=None: None)("id") if isinstance(widget, dict) else widget for widget in widgets],
+                )
                 return ProjectDashboardLayout(**data)
         except FileNotFoundError:
+            logger.warning("Dashboard layout file not found for project '%s' at %s", self.project_name, self.file_path)
             return ProjectDashboardLayout(project_name=self.project_name)
 
     def save_layout(self, layout: GraphLayout):
-        os.makedirs(self.folder_path, exist_ok=True)
+        os.makedirs(self.project_dir, exist_ok=True)
         current_data: ProjectDashboardLayout = self.load_layout()
         with open(self.file_path, "w") as f:
             if current_data.widgets is None:
@@ -126,17 +156,15 @@ class ProjectDataHandler: # handles the JSON file for a project that stores dash
             json.dump(current_data.dict(), f, indent=4)
 
     def delete_widget(self, widget_id: str):
-        os.makedirs(self.folder_path, exist_ok=True)
+        os.makedirs(self.project_dir, exist_ok=True)
         current_data: ProjectDashboardLayout = self.load_layout()
         with open(self.file_path, "w") as f:
             current_data.widgets = [w for w in current_data.widgets if w.id != widget_id]
             json.dump(current_data.dict(), f, indent=4)
 
-sqlite_url = "sqlite:///database.db"
-connect_args = {"check_same_thread" : False}
-engine = create_engine(sqlite_url, connect_args=connect_args)
+# NOTE: engine is already created above — the duplicate definition was removed.
 
-DEFAULT_CONFIG_PATH = "app_config.json"
+DEFAULT_CONFIG_PATH = data_path("app_config.json")
 
 def generate_chart_sql(graph: GraphLayout) -> str:
     y_axis = graph.config.y_axis
@@ -193,7 +221,9 @@ def initialize_project_connection(project: Project):
     logger.info(f"Initializing connection for project: {project.name}")
     folder_path = project.name.replace(" ", "_")
     project_data_handler = ProjectDataHandler(project_name=project.name)
-    conn = duckdb.connect(f"projects/{folder_path}/project.duckdb", read_only=False)
+    project_db_path = os.path.join(get_projects_dir(), folder_path, "project.duckdb")
+    os.makedirs(os.path.dirname(project_db_path), exist_ok=True)
+    conn = duckdb.connect(project_db_path, read_only=False)
     selected_project = project.name
     logger.info(f"Project connection established for: {project.name}")
 
@@ -242,6 +272,27 @@ async def lifespan(app : FastAPI):
     logger.info("Application shutdown complete.")
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_http_requests(request: Request, call_next):
+    started_at = time.perf_counter()
+    logger.info("HTTP %s %s query=%s", request.method, request.url.path, dict(request.query_params))
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error during %s %s", request.method, request.url.path)
+        raise
+
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    logger.info(
+        "HTTP %s %s -> %s in %.2fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 # Mount admin database visualizer
 admin.init(engine)
@@ -336,25 +387,40 @@ def select_current_project(project_id: int, session: SessionDep):
 @require_project
 def get_dashboard_layout():
     global project_data_handler
+    logger.info(
+        "Dashboard layout requested for project '%s' using handler file %s",
+        selected_project,
+        getattr(project_data_handler, "file_path", None),
+    )
     layout = project_data_handler.load_layout()
+    widget_count = len(layout.widgets or [])
+    logger.info(
+        "Returning dashboard layout for project '%s' with %d widget(s)",
+        layout.project_name,
+        widget_count,
+    )
     return JSONResponse(layout.dict())
 
 @app.get("/project/sql/dashboard")
 @require_project
 def get_project_dashboard():
     global conn
-    tables = conn.execute("SHOW TABLES;").fetchall()
+    with db_lock:
+        tables = conn.execute("SHOW TABLES;").fetchall()
+    logger.info("Project table list requested for '%s': %d table(s) found", selected_project, len(tables))
     return JSONResponse({"tables" : tables})
 
 @app.get("/sql/get-selected-table-data")
 @require_project
 def gettabledata(table_name : str, offset : int = 0, limit : int = 100):
     global conn
-    df = conn.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset};").df()
+    with db_lock:
+        df = conn.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset};").df()
     rows = json.loads(df.to_json(orient='records'))
 
     if offset == 0:
-        row_count = conn.execute(f"SELECT COUNT(*) from {table_name};").fetchall()
+        with db_lock:
+            row_count = conn.execute(f"SELECT COUNT(*) from {table_name};").fetchall()
         return JSONResponse({"rows" : rows, "row_count" : row_count})
 
     return JSONResponse({"rows" : rows})
@@ -363,7 +429,8 @@ def gettabledata(table_name : str, offset : int = 0, limit : int = 100):
 @require_project
 def execute_sql(query_str: str):
     global conn
-    df = conn.execute(query_str).df()
+    with db_lock:
+        df = conn.execute(query_str).df()
     results = json.loads(df.to_json(orient='records'))
 
     return JSONResponse({"results" : results})
@@ -381,25 +448,26 @@ def fetch_query_format(request: ValidateSQLRequest):
         print("Dry run query:", dry_run_query)
         print("With params:", params)
 
-        result = conn.execute(dry_run_query, params)
+        with db_lock:
+            result = conn.execute(dry_run_query, params)
 
-        schema = []
-        for col in result.description:
-            col_name = col[0]
-            col_type = str(col[1])
+            schema = []
+            for col in result.description:
+                col_name = col[0]
+                col_type = str(col[1])
 
-            if col_type in ["BIGINT", "INTEGER", "DOUBLE", "FLOAT"]:
-                ui_type = "numeric"
-            elif col_type in ["DATE", "TIMESTAMP"]:
-                ui_type = "temporal"
-            else:
-                ui_type = "categorical"
+                if col_type in ["BIGINT", "INTEGER", "DOUBLE", "FLOAT"]:
+                    ui_type = "numeric"
+                elif col_type in ["DATE", "TIMESTAMP"]:
+                    ui_type = "temporal"
+                else:
+                    ui_type = "categorical"
 
-            schema.append({"name": col_name, "type": ui_type})
+                schema.append({"name": col_name, "type": ui_type})
 
-        # Get actual row count
-        count_query = f"SELECT COUNT(*) as row_count FROM ({request.query_str})"
-        count_result = conn.execute(count_query, params).fetchone()
+            # Get actual row count
+            count_query = f"SELECT COUNT(*) as row_count FROM ({request.query_str})"
+            count_result = conn.execute(count_query, params).fetchone()
         actual_row_count = count_result[0] if count_result else 0
 
         return JSONResponse({"status": "valid", "schema": schema, "row_count": actual_row_count})
@@ -426,11 +494,34 @@ def save_graph_layout(request: GraphLayout):
 @require_project
 def execute_chart_sql(graph: GraphLayout):
     global conn
+    logger.info(
+        "Executing chart SQL for widget id=%s title=%r type=%s agg=%s x=%s y=%s",
+        graph.id,
+        graph.title,
+        graph.graph_type,
+        graph.config.agg_type,
+        graph.config.x_axis,
+        graph.config.y_axis,
+    )
     sql = generate_chart_sql(graph)
     variables = {var.name: var.default for var in graph.config.variables} if graph.config.variables else {}
-    df = conn.execute(sql, variables).df()
-    results = json.loads(df.to_json(orient='records'))
-    return JSONResponse({"results" : results})
+    logger.info("Generated chart SQL for widget id=%s: %s", graph.id, _truncate_log_value(sql, 1600))
+    logger.info("Chart SQL variables for widget id=%s: %s", graph.id, _truncate_log_value(variables, 800))
+
+    try:
+        with db_lock:
+            df = conn.execute(sql, variables).df()
+        results = json.loads(df.to_json(orient='records'))
+        logger.info(
+            "Chart SQL completed for widget id=%s with %d row(s) and %d column(s)",
+            graph.id,
+            len(results),
+            len(results[0]) if results else 0,
+        )
+        return JSONResponse({"results" : results})
+    except Exception as exc:
+        logger.exception("Chart SQL failed for widget id=%s title=%r", graph.id, graph.title)
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 @app.post("/delete-graph-widget")
 @require_project
@@ -567,7 +658,8 @@ class ExecuteCanvasQueryRequest(BaseModel):
 def execute_canvas_query(request: ExecuteCanvasQueryRequest):
     global conn
     params = {p["name"]: p["default"] for p in request.sql_params} if request.sql_params else {}
-    df = conn.execute(request.sql_query, params).df()
+    with db_lock:
+        df = conn.execute(request.sql_query, params).df()
     results = json.loads(df.to_json(orient='records'))
     return JSONResponse({"results": results})
 
@@ -596,3 +688,7 @@ def rename_chat_session(thread_id: str, new_name: str, session: SessionDep):
         return JSONResponse({"message": "Chat session renamed"})
     else:
         return JSONResponse({"error": "Chat session not found"}, status_code=404)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
