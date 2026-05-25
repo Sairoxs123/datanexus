@@ -84,6 +84,7 @@ function App() {
           projects={projects}
           onSelectProject={openProject}
           onNewProject={() => setCurrentPage("landing")}
+          onProjectDeleted={fetchProjects}
         />
       );
     case "dashboard":

@@ -8,9 +8,23 @@ def get_safe_thread_count():
     safe_threads = max(1, physical_cores - 1)
     return safe_threads
 
+def get_selected_model():
+    from paths import data_path
+    import json
+    settings_path = data_path("settings.json")
+    model_name = "qwen3:4b"
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+                model_name = settings.get("selected_model", model_name)
+        except:
+            pass
+    return model_name
+
 def _make_llm(temperature: float, **kwargs):
     return ChatOllama(
-        model="gemma3:4b",
+        model=get_selected_model(),
         temperature=temperature,
         num_ctx=8192,
         num_thread=get_safe_thread_count(),
@@ -18,8 +32,15 @@ def _make_llm(temperature: float, **kwargs):
         **kwargs,
     )
 
-analyst_llm = _make_llm(temperature=0.7)
-sql_generator_llm = _make_llm(temperature=0.0).with_structured_output(GeneratedQuery)
-synthesizer_llm = _make_llm(temperature=0.8)
-router_llm = _make_llm(temperature=0.4).with_structured_output(ExecutionPlan)
+def get_analyst_llm():
+    return _make_llm(temperature=0.7)
+
+def get_sql_generator_llm():
+    return _make_llm(temperature=0.0).with_structured_output(GeneratedQuery)
+
+def get_synthesizer_llm():
+    return _make_llm(temperature=0.8)
+
+def get_router_llm():
+    return _make_llm(temperature=0.4).with_structured_output(ExecutionPlan)
 

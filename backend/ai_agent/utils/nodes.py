@@ -1,4 +1,4 @@
-from ai_agent.utils.models import analyst_llm, sql_generator_llm, synthesizer_llm, router_llm
+from ai_agent.utils.models import get_analyst_llm, get_sql_generator_llm, get_synthesizer_llm, get_router_llm
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, AnyMessage
 from ai_agent.utils.state import AppState
 from langgraph.graph import END
@@ -60,9 +60,10 @@ def planner_node(state: AppState):
         1. DO NOT answer the user's question directly.
         2. DO NOT worry about whether the dates are in the future; assume the data exists in the table.
         3. Output ONLY the JSON plan.
+        4. CRITICAL: For ANY database question or data analysis, your plan MUST be EXACTLY this sequence in this order: ["sql_agent", "executor_tool", "analyst_agent", "synthesizer_node"]. DO NOT change the order.
     """)
 
-    plan_result = router_llm.invoke([system_prompt, HumanMessage(content=latest_message)])
+    plan_result = get_router_llm().invoke([system_prompt, HumanMessage(content=latest_message)])
     logger.info("planner_node: raw plan result=%s", plan_result)
 
     invalid_steps = [step for step in plan_result.plan if step not in VALID_NODES]
@@ -72,11 +73,15 @@ def planner_node(state: AppState):
     logger.info("planner_node: generated plan=%s", plan_result.plan)
     return {"plan": plan_result.plan}
 
+def get_safe_history(messages):
+    return [m for m in messages if isinstance(m, (HumanMessage, AIMessage))]
+
 def sql_agent(state: AppState, config: RunnableConfig):
     logger.info("sql_agent: started")
     dispatch_custom_event("status", {"status": "Generating SQL query with LLM..."})
 
     schema = config["configurable"].get("table_schema", "No schema provided")
+    safe_history = get_safe_history(state["messages"])
 
     system_prompt = SystemMessage(content=f"""
         You are an expert DuckDB SQL Developer.
@@ -84,20 +89,33 @@ def sql_agent(state: AppState, config: RunnableConfig):
         CURRENT TABLE SCHEMA:
         {schema}
 
+        CRITICAL INSTRUCTIONS FOR 'INSIGHTS':
+        The AI Analyst (your coworker) cannot see large datasets.
+        1. For a general overview of the whole table (e.g. "give me insights about the data"), YOU MUST USE EXACTLY: `SUMMARIZE table_name;` (Do NOT write standard SELECT SUM() queries for this!).
+        2. CRITICAL: If the user asks for a specific metric (like "average travel time", "total revenue"), DO NOT use SUMMARIZE. You MUST write a specific SQL query with aggregations (e.g. `SELECT AVG(date_diff('minute', pickup, dropoff))`).
+        3. For specific trends/grouping: Use aggregations (COUNT, SUM, AVG, MIN, MAX) grouped by categories.
+        4. For follow-ups: Wrap the user's previous query in a CTE (WITH prev AS (...)) and aggregate it.
+
+        Keep the output under 20 rows so the Analyst can read it.
+
         CRITICAL RULES for Parameterization:
-        1. YOU MUST EXTRACT ALL literal values (numbers, strings, dates) into variables using the $variable_name syntax.
-        2. ABSOLUTELY DO NOT HARDCODE ANY VALUES in your WHERE clauses or similar conditions. For example, use $start_date and $end_date instead of '2025-01-01' or '2025-03-31'.
+        1. If your query requires literal values (numbers, strings, dates) in WHERE clauses or similar conditions, YOU MUST EXTRACT THEM into variables using the $variable_name syntax.
+        2. ABSOLUTELY DO NOT HARDCODE ANY VALUES in your WHERE clauses. For example, use $start_date and $end_date instead of '2025-01-01' or '2025-03-31'.
         3. Never wrap a variable in quotes or conversion functions like TIMESTAMP(), CAST(), or DATE(). Write comparisons directly: tpep_pickup_datetime BETWEEN $start_date AND $end_date.
-        4. Populate the 'sql_params' array with EVERY variable you used and set its exact required value in the "default" field.
+        4. Populate the 'sql_params' array with EVERY variable you used. If your query does not require any variables, leave the 'sql_params' array EMPTY. Do not generate fake or unused variables.
+        5. EVERY variable in your query MUST be defined in 'sql_params'. If the query contains $start_date, 'start_date' MUST be in 'sql_params'.
 
         Return a GeneratedQuery object containing 'sql_query' and 'sql_params'.
     """)
-    human_prompt = HumanMessage(content=state["messages"][-1].content)
 
-    result = sql_generator_llm.invoke([system_prompt, human_prompt])
+    # If retrying due to an error, append the error to the history so it can fix it
+    if state.get("errors"):
+        safe_history.append(HumanMessage(content=f"Your previous query:\n{state.get('sql_query', 'None')}\n\nFailed with this error:\n{state.get('errors')}\n\nPlease fix the query. DO NOT use fake keywords like 'PERCOLATE', and ensure your syntax is correct for DuckDB."))
+
+    result = get_sql_generator_llm().invoke([system_prompt] + safe_history)
     logger.info(
         "sql_agent: generated SQL | sql_preview='%s' | param_keys=%s | defaults=%s",
-        _preview_text(result.sql_query),
+        result.sql_query,
         [res.name for res in result.sql_params],
         {res.name: res.default for res in result.sql_params},
     )
@@ -106,7 +124,7 @@ def sql_agent(state: AppState, config: RunnableConfig):
         "sql_query": result.sql_query,
         "sql_params": result.sql_params,
         "errors": "",
-        "plan" : state["plan"][1:] if len(state.get("plan", [])) > 1 else []
+        "plan" : ["executor_tool", "analyst_agent", "synthesizer_node"] if state.get("errors") else (state["plan"][1:] if len(state.get("plan", [])) > 1 else [])
     }
 
 async def executor_tool(state: AppState, config: RunnableConfig):
@@ -119,7 +137,7 @@ async def executor_tool(state: AppState, config: RunnableConfig):
         sql_params_dict = {res.name: res.default for res in sql_params}
         logger.info(
             "executor_tool: executing SQL | sql_preview='%s' | param_keys=%s | params=%s",
-            _preview_text(sql_query),
+            sql_query,
             sql_params_dict.keys(),
             sql_params_dict,
         )
@@ -143,7 +161,12 @@ async def executor_tool(state: AppState, config: RunnableConfig):
 
         canvas_message = CanvasMessage(content={"columns": list(results_df.columns), "rows": data_array}, sql_data={"sql_query": sql_query, "sql_params": sql_params})
 
-        return {"messages": [canvas_message],  "db_results": data_json[:5], "errors": "", "plan": state["plan"][1:] if len(state.get("plan", [])) > 1 else []}
+        return {
+            "messages": [canvas_message],
+            "db_results": json.dumps(data_array[:20]),
+            "errors": "",
+            "plan": state["plan"][1:] if len(state.get("plan", [])) > 1 else []
+        }
 
     except Exception as e:
         logger.exception("executor_tool: query failed with exception")
@@ -168,8 +191,9 @@ def analyst_node(state: AppState, config: RunnableConfig):
         INSTRUCTIONS:
         1. Keep the response short, clear, and direct.
         2. If errors exist, explain the issue in plain language and, if useful, mention a simple fix.
-        3. If results exist, summarize the main finding only. Do not add extra caveats or commentary about placeholder variables, date parameters, or query mechanics.
+        3. Your ONLY job is to answer the user's specific question using the data provided. Summarize the main finding focusing on BUSINESS INSIGHTS.
         4. If results are empty, say that no rows matched the query and keep it brief.
+        5. CRITICAL NEGATIVE CONSTRAINT: NEVER mention missing values, null percentages, standard deviations, or technical data quality issues unless the user specifically asked about data quality! Ignore those columns if they appear in a SUMMARIZE query. Focus ONLY on answering the user's prompt using the min, max, and avg values of relevant columns.
 
         Be precise and avoid unnecessary explanation.
     """)
@@ -181,7 +205,7 @@ def analyst_node(state: AppState, config: RunnableConfig):
         Execution Errors: {state.get("errors", "None")}
     """)
 
-    insights = analyst_llm.invoke([system_prompt, human_msg])
+    insights = get_analyst_llm().invoke([system_prompt, human_msg])
     logger.info("analyst_node: generated analysis | preview='%s'", _preview_text(insights.content))
     return {"analysis": insights.content, "plan": state["plan"][1:] if len(state.get("plan", [])) > 1 else []}
 
@@ -198,9 +222,10 @@ async def synthesizer_node(state: AppState):
     USER QUESTION: {state["messages"][-1].content}
     ANALYST INSIGHTS: {state.get("analysis", "No insights available.")}
 
-    Keep it short and natural. Do not mention placeholder variables, query execution details, or suggest follow-up questions unless the user clearly needs one.
+    Keep it short and natural.
+    CRITICAL RULE: DO NOT use robotic prefaces like "Here is the final answer", "Based on the analyst's insights", or "Okay, here is...". Just directly answer the user's question conversationally as if you are the analyst. Do not mention placeholder variables or suggest follow-up questions.
     """
 
-    final_answer = await synthesizer_llm.ainvoke(prompt)
+    final_answer = await get_synthesizer_llm().ainvoke(prompt)
     logger.info("synthesizer_node: completed | answer_preview='%s'", _preview_text(final_answer))
     return {"messages": [AIMessage(content=final_answer.content)], "plan": state["plan"][1:] if len(state.get("plan", [])) > 1 else []}

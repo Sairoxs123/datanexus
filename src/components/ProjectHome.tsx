@@ -374,14 +374,18 @@ export default function ProjectHome({
                     <div className="w-16 h-16 rounded-2xl bg-surface-container-highest flex items-center justify-center mb-5">
                       <LayoutDashboard className="w-8 h-8 text-outline" />
                     </div>
-                    <h3 className="text-xl font-semibold text-on-surface mb-2">No Charts Found</h3>
+                    <h3 className="text-xl font-semibold text-on-surface mb-2">
+                      {tables.length === 0 ? "No Data Imported" : "No Charts Yet"}
+                    </h3>
                     <p className="text-sm text-on-surface-variant max-w-sm mx-auto">
-                      Create your first chart to start visualizing your data on this dashboard.
+                      {tables.length === 0 
+                        ? "You haven't imported any data yet. Go to the Data Studio to upload your first dataset or connect to a database."
+                        : "You have data imported, but no charts created. Create your first chart to start visualizing your data."}
                     </p>
                     <button
-                      onClick={() => setView("graph-builder")}
+                      onClick={() => setView(tables.length === 0 ? "sql-dashboard" : "graph-builder")}
                       className="mt-6 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm">
-                      Create First Chart <ArrowRight className="w-4 h-4" />
+                      {tables.length === 0 ? "Go to Data Studio" : "Create First Chart"} <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 )}

@@ -7,8 +7,6 @@ import {
   RefreshCw,
   Terminal,
   LayoutGrid,
-  Settings,
-  Activity,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -46,9 +44,9 @@ export default function Sidebar({
           title="Expand sidebar">
           <ChevronLeft className="w-4 h-4 rotate-180" />
         </button>
-        
+
         <div className="w-8 h-px bg-outline-variant" />
-        
+
         <nav className="flex flex-col gap-3">
           <button onClick={() => onTabChange("data")}
             className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
@@ -166,11 +164,6 @@ export default function Sidebar({
           <Plus className="w-4 h-4" />
           Import Data
         </button>
-        
-        <div className="flex items-center justify-center gap-6 mt-5">
-           <Settings className="w-4 h-4 text-on-surface-variant hover:text-on-surface cursor-pointer transition-colors" />
-           <Activity className="w-4 h-4 text-on-surface-variant hover:text-on-surface cursor-pointer transition-colors" />
-        </div>
       </div>
     </div>
   );

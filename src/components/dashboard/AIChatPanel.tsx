@@ -71,6 +71,8 @@ export default function AIChatPanel(props: AIChatPanelProps) {
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const [loadingThreads, setLoadingThreads] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingCanvas, setLoadingCanvas] = useState<Record<string, boolean>>({});
@@ -83,7 +85,27 @@ export default function AIChatPanel(props: AIChatPanelProps) {
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  useEffect(() => { if (isOpen) loadThreads(); }, [isOpen]);
+  useEffect(() => {
+    if (isOpen) loadThreads();
+
+    // Fetch models
+    api.get<{models: string[], selected_model: string}>("/ollama/models")
+      .then((res) => {
+        setAvailableModels(res.data.models);
+        setSelectedModel(res.data.selected_model);
+      })
+      .catch((err) => console.error("Failed to fetch models", err));
+  }, [isOpen]);
+
+  const handleModelChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const model = e.target.value;
+    setSelectedModel(model);
+    try {
+      await api.post("/ollama/model", { model });
+    } catch (err) {
+      console.error("Failed to set model", err);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -156,10 +178,30 @@ export default function AIChatPanel(props: AIChatPanelProps) {
     finally { setLoadingMessages(false); }
   };
 
+  const handleEditLastMessageSubmit = async (newText: string) => {
+    if (!activeThreadId || isStreaming) return;
+    try {
+      await api.post("/edit-last-message", { thread_id: activeThreadId });
+      setMessages((prev) => {
+        const reversed = [...prev].reverse();
+        const lastUserIdxRev = reversed.findIndex(m => m.role === "user");
+        if (lastUserIdxRev !== -1) {
+          const lastUserIdx = prev.length - 1 - lastUserIdxRev;
+          const kept = prev.slice(0, lastUserIdx);
+          return [...kept, { id: `user-${Date.now()}`, role: "user", content: newText }];
+        }
+        return prev;
+      });
+      await streamMessage(activeThreadId, newText);
+    } catch (e) {
+      console.error(e);
+      setIsStreaming(false);
+    }
+  };
+
   const showStatus = useCallback((text: string) => {
     setStatusText(text);
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
-    statusTimerRef.current = setTimeout(() => setStatusText(null), 6000);
   }, []);
 
   const streamMessage = async (threadId: string, userMessage: string) => {
@@ -271,6 +313,7 @@ export default function AIChatPanel(props: AIChatPanelProps) {
         setPanelView("chat");
         setMessages([{ id: `user-${Date.now()}`, role: "user", content: msg }]);
         await streamMessage(newId, msg);
+        await loadThreads();
       } catch (err) { console.error("Failed to create chat:", err); }
     } else {
       setMessages((prev) => [
@@ -425,6 +468,17 @@ export default function AIChatPanel(props: AIChatPanelProps) {
         )}
 
         <div className="flex items-center gap-1 shrink-0 ml-2">
+          {availableModels.length > 0 && (
+            <select
+              value={selectedModel}
+              onChange={handleModelChange}
+              className="mr-2 bg-transparent text-xs text-on-surface-variant outline-none border-none cursor-pointer hover:text-primary transition-colors max-w-30 truncate"
+              title="Select LLM model"
+            >
+              {availableModels.map(m => <option key={m} value={m} className="bg-surface text-on-surface">{m}</option>)}
+            </select>
+          )}
+
           {panelView === "chat" && activeThread && (
             <>
               <button
@@ -491,6 +545,7 @@ export default function AIChatPanel(props: AIChatPanelProps) {
           onInputChange={setInputValue}
           onKeyDown={handleKeyDown}
           onSend={handleSend}
+          onEditLastMessageSubmit={handleEditLastMessageSubmit}
           onViewSnapshot={viewSnapshot}
           onAddCanvasToDashboard={props.onAddCanvasToDashboard}
         />
@@ -642,7 +697,7 @@ function ThreadList({
 function ChatView({
   messages, loading, isStreaming, statusText, loadingCanvas,
   inputValue, inputRef, messagesEndRef,
-  onInputChange, onKeyDown, onSend, onViewSnapshot, onAddCanvasToDashboard,
+  onInputChange, onKeyDown, onSend, onEditLastMessageSubmit, onViewSnapshot, onAddCanvasToDashboard,
 }: {
   messages: Message[];
   loading: boolean;
@@ -655,6 +710,7 @@ function ChatView({
   onInputChange: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
+  onEditLastMessageSubmit: (newText: string) => void;
   onViewSnapshot: (msg: Message) => void;
   onAddCanvasToDashboard: (seed: CanvasChartSeed) => void;
 }) {
@@ -675,6 +731,9 @@ function ChatView({
           </div>
         ) : (
           messages.map((msg) => {
+            const lastUserMsgIdx = [...messages].reverse().findIndex(m => m.role === "user");
+            const lastUserMsgId = lastUserMsgIdx !== -1 ? messages[messages.length - 1 - lastUserMsgIdx].id : null;
+
             const handleAddToDashboard = () => {
               const sqlQuery = msg.sql_query ?? msg.canvas_data?.sql_query;
               if (!sqlQuery) {
@@ -692,6 +751,8 @@ function ChatView({
                 key={msg.id}
                 message={msg}
                 loadingCanvas={loadingCanvas[msg.id]}
+                isLastUserMsg={msg.id === lastUserMsgId}
+                onEditSubmit={onEditLastMessageSubmit}
                 onViewCanvas={() => onViewSnapshot(msg)}
                 onAddToDashboard={handleAddToDashboard}
               />
@@ -746,24 +807,88 @@ function ChatView({
 function MessageBubble({
   message,
   loadingCanvas,
+  isLastUserMsg,
+  onEditSubmit,
   onViewCanvas,
   onAddToDashboard,
 }: {
   message: Message;
   loadingCanvas?: boolean;
+  isLastUserMsg?: boolean;
+  onEditSubmit?: (text: string) => void;
   onViewCanvas?: () => void;
   onAddToDashboard?: () => void;
 }) {
   const [sqlExpanded, setSqlExpanded] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(message.content || "");
+  const editInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (isEditing && editInputRef.current) {
+      editInputRef.current.style.height = "auto";
+      editInputRef.current.style.height = `${Math.min(editInputRef.current.scrollHeight, 128)}px`;
+    }
+  }, [editDraft, isEditing]);
+
+  const handleEditSave = () => {
+    if (editDraft.trim() && onEditSubmit) {
+      setIsEditing(false);
+      onEditSubmit(editDraft);
+    }
+  };
 
   const displayContent = message.content ? message.content.replace(/```sql[\s\S]*?```/gi, "").trim() : "";
   const sqlCode = message.content ? message.content.match(/```sql\n?([\s\S]*?)```/i)?.[1]?.trim() : message.sql_query;
 
   if (message.role === "user") {
+    if (isEditing) {
+      return (
+        <div className="flex justify-end w-full">
+          <div className="w-[85%] bg-surface-container-highest rounded-xl border border-primary/30 p-3 shadow-sm flex flex-col gap-2 transition-all">
+            <textarea
+              ref={editInputRef}
+              value={editDraft}
+              onChange={(e) => setEditDraft(e.target.value)}
+              className="w-full bg-transparent resize-none text-sm text-on-surface focus:outline-none leading-relaxed overflow-y-auto"
+              style={{ minHeight: "44px", maxHeight: "128px" }}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2 mt-1">
+              <button
+                onClick={() => setIsEditing(false)}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-on-surface-variant hover:bg-surface-variant transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSave}
+                disabled={!editDraft.trim()}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                Save & Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-tr-sm bg-primary text-white text-sm leading-relaxed wrap-break-word">
-          {message.content}
+      <div className="flex justify-end group">
+        <div className="flex items-center gap-2">
+          {isLastUserMsg && onEditSubmit && (
+            <button
+              onClick={() => { setIsEditing(true); setEditDraft(message.content || ""); }}
+              className="p-1.5 text-on-surface-variant/0 group-hover:text-on-surface-variant hover:text-on-surface hover:bg-surface-variant rounded-md transition-all"
+              title="Edit message"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-tr-sm bg-primary text-white text-sm leading-relaxed wrap-break-word">
+            {message.content}
+          </div>
         </div>
       </div>
     );

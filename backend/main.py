@@ -18,12 +18,13 @@ import pathlib
 import os
 from ai_agent import init_agent, get_agent, close_agent
 from langchain_core.messages import HumanMessage, AIMessage
-from ai_agent.utils import synthesizer_llm
+from ai_agent.utils import get_synthesizer_llm
 from ai_agent.utils.messages import CanvasMessage
 import logging
 from logging.handlers import RotatingFileHandler
 import sys
 import time
+import shutil
 from paths import data_path, get_log_dir, get_projects_dir, DATA_DIR
 
 # ---------------------------------------------------------------------------
@@ -107,6 +108,9 @@ class DeleteWidgetRequest(BaseModel):
 class ProjectDashboardLayout(BaseModel):
     project_name: str
     widgets: List[GraphLayout] | None = None
+
+class ModelSelectionRequest(BaseModel):
+    model: str
 
 class ProjectDataHandler: # handles the JSON file for a project that stores dashboard layout and other metadata
     def __init__(self, project_name: str):
@@ -343,6 +347,42 @@ def create_new_project(request: CreateProjectRequest, session: SessionDep):
     logger.info(f"Successfully created project: {request.project_name}")
     return JSONResponse({"message": "Project created."}, status_code=201)
 
+@app.delete("/project/{project_id}")
+def delete_project(project_id: int, session: SessionDep):
+    global conn, selected_project, project_data_handler
+
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+
+    # Disconnect if it's the currently active project
+    if project.name == selected_project:
+        if conn is not None:
+            conn.close()
+            conn = None
+        selected_project = None
+        project_data_handler = None
+
+    # Delete associated chat sessions
+    chats = session.exec(select(ChatSession).where(ChatSession.project_id == project_id)).all()
+    for chat in chats:
+        session.delete(chat)
+
+    session.delete(project)
+    session.commit()
+
+    # Delete the actual project directory from disk
+    try:
+        folder_path = project.name.replace(" ", "_")
+        project_dir = os.path.join(get_projects_dir(), folder_path)
+        if os.path.exists(project_dir):
+            shutil.rmtree(project_dir)
+            logger.info(f"Deleted project folder: {project_dir}")
+    except Exception as e:
+        logger.error(f"Failed to delete project folder for '{project.name}': {e}")
+
+    return JSONResponse({"message": "Project deleted successfully"})
+
 @app.post("/ingest-data")
 @require_project
 def ingest_data(request: DataIngestionRequest):
@@ -533,7 +573,7 @@ def delete_graph_widget(request: DeleteWidgetRequest):
 async def generate_chat_name(thread_id: str, first_message: str, session: Session):
     prompt = f"Summarize this into a 3-word title: {first_message}. Output ONLY the title."
 
-    title = await synthesizer_llm.ainvoke(prompt)
+    title = await get_synthesizer_llm.ainvoke(prompt)
     title = title.content.strip().replace('"', '')
 
     logger.info(f"Generated chat title: '{title}' for thread_id: {thread_id} based on first message: '{first_message}'")
@@ -564,6 +604,9 @@ def create_ai_chat(message: str, background_tasks: BackgroundTasks, session: Ses
 class ChatRequest(BaseModel):
     thread_id: str
     message: str
+
+class EditLastMessageRequest(BaseModel):
+    thread_id: str
 
 @app.post("/send-ai-message")
 @require_project
@@ -677,6 +720,34 @@ def delete_chat_session(thread_id: str, session: SessionDep):
         pass
     return JSONResponse({"message": "Chat session deleted"})
 
+@app.post("/edit-last-message")
+@require_project
+async def edit_last_message(req: EditLastMessageRequest):
+    from langchain_core.messages import RemoveMessage, HumanMessage
+    config = {"configurable": {"thread_id": req.thread_id, "conn": conn}}
+    try:
+        state = await get_agent().aget_state(config)
+        messages = state.values.get("messages", [])
+        
+        last_user_idx = -1
+        for i, m in enumerate(messages):
+            if isinstance(m, HumanMessage):
+                last_user_idx = i
+                
+        if last_user_idx == -1:
+            return JSONResponse({"error": "No user message found"}, status_code=400)
+            
+        last_user_msg = messages[last_user_idx]
+        text_content = last_user_msg.content if isinstance(last_user_msg.content, str) else str(last_user_msg.content)
+        
+        messages_to_remove = [RemoveMessage(id=m.id) for m in messages[last_user_idx:]]
+        await get_agent().aupdate_state(config, {"messages": messages_to_remove})
+        
+        return JSONResponse({"text": text_content})
+    except Exception as e:
+        logger.error(f"Error editing last message: {e}")
+        return JSONResponse({"error": "Failed to edit message"}, status_code=500)
+
 @app.post("/rename-chat-session/{thread_id}")
 @require_project
 def rename_chat_session(thread_id: str, new_name: str, session: SessionDep):
@@ -688,6 +759,47 @@ def rename_chat_session(thread_id: str, new_name: str, session: SessionDep):
         return JSONResponse({"message": "Chat session renamed"})
     else:
         return JSONResponse({"error": "Chat session not found"}, status_code=404)
+
+@app.get("/ollama/models")
+async def get_ollama_models():
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("http://127.0.0.1:11434/api/tags", timeout=3.0)
+            data = resp.json()
+            models = [m["name"] for m in data.get("models", [])]
+    except Exception as e:
+        models = []
+
+    settings_path = data_path("settings.json")
+    selected_model = "qwen3:4b"
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+                selected_model = settings.get("selected_model", selected_model)
+        except:
+            pass
+
+    if selected_model not in models and models:
+        selected_model = models[0]
+
+    return {"models": models, "selected_model": selected_model}
+
+@app.post("/ollama/model")
+def set_ollama_model(req: ModelSelectionRequest):
+    settings_path = data_path("settings.json")
+    settings = {}
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+        except:
+            pass
+    settings["selected_model"] = req.model
+    with open(settings_path, "w") as f:
+        json.dump(settings, f)
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn

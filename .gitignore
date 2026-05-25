@@ -39,4 +39,5 @@ backend/dist/
 backend/build/
 
 # Tauri sidecar binaries
-src-tauri/bin/
+src-tauri/bin/
+settings.json

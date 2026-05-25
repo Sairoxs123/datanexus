@@ -23,11 +23,15 @@ fn greet(name: &str) -> String {
 #[cfg(debug_assertions)]
 #[cfg(windows)]
 fn spawn_backend(backend_path: &std::path::Path) -> Option<ChildProcess> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+
     // Development mode on Windows: spawn backend directly
     let python_path = backend_path.join("venv").join("Scripts").join("python.exe");
     let child = Command::new(python_path)
         .args(["-m", "uvicorn", "main:app", "--reload"])
         .current_dir(backend_path)
+        .creation_flags(CREATE_NEW_CONSOLE)
         .spawn();
 
     match child {
