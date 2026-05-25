@@ -15,7 +15,7 @@
     "test:backend": "cd backend && venv\\Scripts\\python.exe -m pytest -v",
     "test:quick": "cd backend && venv\\Scripts\\python.exe -m pytest -x -q",
     "build:backend": "powershell -ExecutionPolicy Bypass -File backend/build_backend.ps1",
-    "build:all": "pnpm run build:backend && pnpm tauri build"
+    "build:all": "pnpm run build:backend && pnpm tauri build --bundles msi"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",

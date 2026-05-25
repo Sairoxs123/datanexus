@@ -20,20 +20,30 @@ function App() {
   const [tables, setTables] = useState<string[]>([]);
 
   const fetchProjects = async () => {
-    try {
-      const response = await api.get("/");
-      if (response.data?.projects) {
-        const parsed = response.data.projects.map((p: string) => JSON.parse(p));
-        setProjects(parsed);
-        setCurrentPage(parsed.length > 0 ? "projects" : "landing");
-      } else {
-        setProjects([]);
-        setCurrentPage("landing");
+    let retries = 15; // Try for 15 seconds
+    while (retries > 0) {
+      try {
+        const response = await api.get("/");
+        if (response.data?.projects) {
+          const parsed = response.data.projects.map((p: string) => JSON.parse(p));
+          setProjects(parsed);
+          setCurrentPage(parsed.length > 0 ? "projects" : "landing");
+        } else {
+          setProjects([]);
+          setCurrentPage("landing");
+        }
+        setLoading(false);
+        return;
+      } catch (error) {
+        console.warn(`Backend not ready yet, retrying... (${retries} attempts left)`);
+        retries--;
+        if (retries === 0) {
+          console.error("Error fetching projects, max retries reached:", error);
+          setLoading(false);
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-    } catch (error) {
-      console.error("Error fetching projects:", error);
-    } finally {
-      setLoading(false);
     }
   };
 

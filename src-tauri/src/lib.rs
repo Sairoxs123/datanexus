@@ -1,4 +1,3 @@
-use std::process::Child;
 #[cfg(debug_assertions)]
 use std::process::Command;
 use std::sync::Mutex;
@@ -6,8 +5,14 @@ use tauri::Manager;
 #[cfg(not(debug_assertions))]
 use tauri_plugin_shell::ShellExt;
 
+#[cfg(debug_assertions)]
+type ChildProcess = std::process::Child;
+
+#[cfg(not(debug_assertions))]
+type ChildProcess = tauri_plugin_shell::process::CommandChild;
+
 // Store the backend process for cleanup
-struct BackendProcess(Mutex<Option<Child>>);
+struct BackendProcess(Mutex<Option<ChildProcess>>);
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -17,13 +22,11 @@ fn greet(name: &str) -> String {
 
 #[cfg(debug_assertions)]
 #[cfg(windows)]
-fn spawn_backend(backend_path: &std::path::Path) -> Option<Child> {
-    // Development mode on Windows: spawn backend via command line
-    let child = Command::new("cmd")
-        .args([
-            "/c",
-            ".\\venv\\Scripts\\activate && python -m uvicorn main:app --reload",
-        ])
+fn spawn_backend(backend_path: &std::path::Path) -> Option<ChildProcess> {
+    // Development mode on Windows: spawn backend directly
+    let python_path = backend_path.join("venv").join("Scripts").join("python.exe");
+    let child = Command::new(python_path)
+        .args(["-m", "uvicorn", "main:app", "--reload"])
         .current_dir(backend_path)
         .spawn();
 
@@ -42,9 +45,15 @@ fn spawn_backend(backend_path: &std::path::Path) -> Option<Child> {
 
 #[cfg(debug_assertions)]
 #[cfg(not(windows))]
-fn spawn_backend(backend_path: &std::path::Path) -> Option<Child> {
+fn spawn_backend(backend_path: &std::path::Path) -> Option<ChildProcess> {
     // Development mode on Unix: spawn backend via python
-    let child = Command::new("python")
+    let python_path = backend_path.join("venv").join("bin").join("python");
+    let python_cmd = if python_path.exists() {
+        python_path.to_str().unwrap()
+    } else {
+        "python"
+    };
+    let child = Command::new(python_cmd)
         .args(["-m", "uvicorn", "main:app", "--reload"])
         .current_dir(backend_path)
         .spawn();
@@ -68,8 +77,10 @@ fn spawn_backend_sidecar(app: &tauri::AppHandle) {
     match app.shell().sidecar("backend") {
         Ok(sidecar_command) => {
             match sidecar_command.spawn() {
-                Ok((mut _rx, _child)) => {
+                Ok((mut _rx, child)) => {
                     println!("Backend sidecar started");
+                    let state = app.state::<BackendProcess>();
+                    *state.0.lock().unwrap() = Some(child);
                 }
                 Err(e) => {
                     eprintln!("Failed to spawn backend sidecar: {}", e);
@@ -83,15 +94,29 @@ fn spawn_backend_sidecar(app: &tauri::AppHandle) {
 }
 
 #[cfg(debug_assertions)]
-fn kill_backend(mut process: Child) {
-    // Development mode: kill the spawned process directly
+#[cfg(windows)]
+fn kill_backend(process: ChildProcess) {
+    // Development mode on Windows: use taskkill to forcefully kill process tree
+    // because uvicorn --reload spawns a child worker process.
+    let pid = process.id();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .status();
+    println!("Backend server stopped");
+}
+
+#[cfg(debug_assertions)]
+#[cfg(not(windows))]
+fn kill_backend(mut process: ChildProcess) {
+    // Development mode on Unix: kill the spawned process directly
     let _ = process.kill();
     println!("Backend server stopped");
 }
 
 #[cfg(not(debug_assertions))]
-fn kill_backend(_process: Child) {
-    // Build/production mode: sidecar handles its own cleanup
+fn kill_backend(process: ChildProcess) {
+    // Build/production mode: kill the sidecar child
+    let _ = process.kill();
     println!("Backend sidecar stopped");
 }
 

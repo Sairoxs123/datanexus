@@ -15,7 +15,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Step 1: Activate venv
-$VenvActivate = Join-Path $BackendDir "venv" "Scripts" "Activate.ps1"
+$VenvActivate = Join-Path $BackendDir "venv\Scripts\Activate.ps1"
 if (-Not (Test-Path $VenvActivate)) {
     Write-Host "[ERROR] Virtual environment not found at: $VenvActivate" -ForegroundColor Red
     exit 1
@@ -48,7 +48,7 @@ try {
 }
 
 # Step 4: Copy to Tauri sidecar directory
-$SourceExe = Join-Path $BackendDir "dist" "backend.exe"
+$SourceExe = Join-Path $BackendDir "dist\backend.exe"
 if (-Not (Test-Path $SourceExe)) {
     Write-Host "[ERROR] Build output not found at: $SourceExe" -ForegroundColor Red
     exit 1
