@@ -104,6 +104,7 @@ def sql_agent(state: AppState, config: RunnableConfig):
         3. Never wrap a variable in quotes or conversion functions like TIMESTAMP(), CAST(), or DATE(). Write comparisons directly: tpep_pickup_datetime BETWEEN $start_date AND $end_date.
         4. Populate the 'sql_params' array with EVERY variable you used. If your query does not require any variables, leave the 'sql_params' array EMPTY. Do not generate fake or unused variables.
         5. EVERY variable in your query MUST be defined in 'sql_params'. If the query contains $start_date, 'start_date' MUST be in 'sql_params'.
+        6. ALWAYS wrap ALL column names in double quotes (e.g., "Shipping Cost", "Order Priority"). This is strictly required for columns with spaces!
 
         Return a GeneratedQuery object containing 'sql_query' and 'sql_params'.
     """)

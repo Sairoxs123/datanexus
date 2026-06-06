@@ -23,21 +23,29 @@ fn greet(name: &str) -> String {
 #[cfg(debug_assertions)]
 #[cfg(windows)]
 fn spawn_backend(backend_path: &std::path::Path) -> Option<ChildProcess> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NEW_CONSOLE: u32 = 0x00000010;
-
-    // Development mode on Windows: spawn backend directly
+    // Development mode on Windows: spawn backend in a completely new console window.
+    // Using cmd /c start ensures stdout is properly attached to the new window,
+    // avoiding Bad File Descriptor errors during uvicorn reload.
     let python_path = backend_path.join("venv").join("Scripts").join("python.exe");
-    let child = Command::new(python_path)
-        .args(["-m", "uvicorn", "main:app", "--reload"])
+    let title = format!("DataNexusBackend {}", std::process::id());
+    
+    let child = Command::new("cmd")
+        .args([
+            "/C",
+            "start",
+            &title,
+            python_path.to_str().unwrap(),
+            "-m",
+            "uvicorn",
+            "main:app",
+            "--reload"
+        ])
         .current_dir(backend_path)
-        .creation_flags(CREATE_NEW_CONSOLE)
         .spawn();
 
     match child {
         Ok(process) => {
-            let pid = process.id();
-            println!("Backend server started in dev mode with PID: {}", pid);
+            println!("Backend server started in dev mode with title: {}", title);
             Some(process)
         }
         Err(e) => {
@@ -99,12 +107,12 @@ fn spawn_backend_sidecar(app: &tauri::AppHandle) {
 
 #[cfg(debug_assertions)]
 #[cfg(windows)]
-fn kill_backend(process: ChildProcess) {
-    // Development mode on Windows: use taskkill to forcefully kill process tree
-    // because uvicorn --reload spawns a child worker process.
-    let pid = process.id();
+fn kill_backend(_process: ChildProcess) {
+    // Development mode on Windows: use taskkill to forcefully kill process tree.
+    // Since we spawned it via `start` with a unique title, we kill by WINDOWTITLE.
+    let title = format!("DataNexusBackend {}", std::process::id());
     let _ = Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .args(["/F", "/T", "/FI", &format!("WINDOWTITLE eq {}*", title)])
         .status();
     println!("Backend server stopped");
 }
@@ -119,8 +127,21 @@ fn kill_backend(mut process: ChildProcess) {
 
 #[cfg(not(debug_assertions))]
 fn kill_backend(process: ChildProcess) {
-    // Build/production mode: kill the sidecar child
-    let _ = process.kill();
+    // Build/production mode: kill the sidecar child process tree
+    // PyInstaller extracts and spawns a child process, so we must kill the whole tree.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/IM", "backend.exe"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = process.kill();
+    }
     println!("Backend sidecar stopped");
 }
 
@@ -172,17 +193,16 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                // Kill the backend process when the window is destroyed
-                let state: tauri::State<BackendProcess> = window.state();
+        .invoke_handler(tauri::generate_handler![greet])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = app.state::<BackendProcess>();
                 let mut guard = state.0.lock().unwrap();
                 if let Some(process) = guard.take() {
                     kill_backend(process);
                 }
             }
-        })
-        .invoke_handler(tauri::generate_handler![greet])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        });
 }

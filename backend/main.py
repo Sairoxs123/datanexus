@@ -395,22 +395,24 @@ def ingest_data(request: DataIngestionRequest):
     file_extension = file.split(".")[1]
 
     if file_extension not in ["csv", "json", "parquet"]:
-        return {"error": "Unsupported file format. Please upload a CSV, JSON, or Parquet file."}
+        return JSONResponse({"error": "Unsupported file format. Please upload a CSV, JSON, or Parquet file."}, status_code=400)
 
     # Sanitize table name by replacing invalid characters with underscores
     table_name = file_name.replace("-", "_").replace(" ", "_").replace(".", "_")
 
     try:
-        if file_extension == "csv":
-            conn.execute(f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_csv('{file_path}')")
-        elif file_extension == "json":
-            conn.execute(f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_json('{file_path}')")
-        elif file_extension == "parquet":
-            conn.execute(f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_parquet('{file_path}')")
+        with db_lock:
+            if file_extension == "csv":
+                conn.execute(f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_csv('{file_path}', ignore_errors=true)")
+            elif file_extension == "json":
+                conn.execute(f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_json('{file_path}')")
+            elif file_extension == "parquet":
+                conn.execute(f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_parquet('{file_path}')")
 
-        return {"message": f"Data ingested successfully into table '{table_name}'."}
+        return JSONResponse({"message": f"Data ingested successfully into table '{table_name}'."})
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Error ingesting data: {e}")
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 @app.post("/select-current-project/{project_id}")
 def select_current_project(project_id: int, session: SessionDep):
@@ -573,7 +575,7 @@ def delete_graph_widget(request: DeleteWidgetRequest):
 async def generate_chat_name(thread_id: str, first_message: str, session: Session):
     prompt = f"Summarize this into a 3-word title: {first_message}. Output ONLY the title."
 
-    title = await get_synthesizer_llm.ainvoke(prompt)
+    title = await get_synthesizer_llm().ainvoke(prompt)
     title = title.content.strip().replace('"', '')
 
     logger.info(f"Generated chat title: '{title}' for thread_id: {thread_id} based on first message: '{first_message}'")
@@ -728,21 +730,21 @@ async def edit_last_message(req: EditLastMessageRequest):
     try:
         state = await get_agent().aget_state(config)
         messages = state.values.get("messages", [])
-        
+
         last_user_idx = -1
         for i, m in enumerate(messages):
             if isinstance(m, HumanMessage):
                 last_user_idx = i
-                
+
         if last_user_idx == -1:
             return JSONResponse({"error": "No user message found"}, status_code=400)
-            
+
         last_user_msg = messages[last_user_idx]
         text_content = last_user_msg.content if isinstance(last_user_msg.content, str) else str(last_user_msg.content)
-        
+
         messages_to_remove = [RemoveMessage(id=m.id) for m in messages[last_user_idx:]]
         await get_agent().aupdate_state(config, {"messages": messages_to_remove})
-        
+
         return JSONResponse({"text": text_content})
     except Exception as e:
         logger.error(f"Error editing last message: {e}")
